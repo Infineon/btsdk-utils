@@ -3,17 +3,17 @@ About BTSpy
 
 BTSpy is a trace utility that can be used in the WICED BT platforms to
 view protocol and generic trace messages from the embedded device.  The
-tool can run on the Windows, Linux or OSX systems. It listens on the UDP
+tool can run on Windows, Linux or OSX systems. It listens on the UDP
 port 9876 and can receive specially formatted message from another
 application on the same or different system.
 
-To start BTSpy execute wiced_tools\BTSpy\<OS>, BTSpy.exe on Windows or
-bt_spy.dmg on MacOS or use RunBtSpy.sh on Linux.  Note that only single
-instance of the application can be executed on a machine.
+To start BTSpy execute wiced_btsdk\tools\btsdk-utils\BTSpy\<OS>, BTSpy.exe on
+Windows or bt_spy.dmg on MacOS or use RunBtSpy.sh on Linux.  Note that only a
+single instance of the application can be executed on a machine.
 
 To read traces over the UART interface the Client Control application
-(apps\host\<OS>\ClientControl), should open the serial port
-associated with the HCI UART port of the CYW207xx which should be
+(wiced_btsdk\tools\btsdk-host-apps-bt-ble\client_control), should open the
+serial port associated with the HCI UART port of the CYW20xxx, which should be
 configured to use the same baud rate as configured in the embedded application.
 
 How to send application traces to BTSpy
@@ -51,10 +51,10 @@ available on all WICED boards and on all operating systems.
 #define HCI_UART_DEFAULT_BAUD   3000000
 
 The application should initialize the transport during application
-initialization -
+initialization:
 wiced_transport_init(&transport_cfg);
 
-Application can then configure system to route traces to WICED HCI -
+Application can then configure system to route traces to WICED HCI:
 wiced_set_debug_uart(WICED_ROUTE_DEBUG_TO_WICED_UART);
 
 If the application needs to send trace messages or HCI packets
@@ -78,9 +78,9 @@ the controller and route them to the BTSpy.
 To register a callback which will be called whenever HCI packet is
 exchanged between the upper layer stack and the controller, the
 application can call the API wiced_bt_dev_register_hci_trace.
-For example -
+For example:
 wiced_bt_dev_register_hci_trace(hello_sensor_hci_trace_cback);
 
 When the callback is executed, the application can just forward
-the packet to the transport -
+the packet to the transport:
 wiced_transport_send_hci_trace(host_trans_pool, type, length, p_data);

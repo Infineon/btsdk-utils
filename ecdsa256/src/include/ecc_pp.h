@@ -1,10 +1,10 @@
 /*
 ********************************************************************
 * THIS INFORMATION IS PROPRIETARY TO
-* BROADCOM CORP.
+* Cypress Semiconductor.
 *-------------------------------------------------------------------
 *
-*           Copyright (c) 2013 Broadcom Corp.
+*           Copyright (c) 2013 Cypress Semiconductor.
 *                      ALL RIGHTS RESERVED
 *
 ********************************************************************
