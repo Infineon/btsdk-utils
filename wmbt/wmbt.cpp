@@ -5,7 +5,7 @@
 #include <conio.h>
 #include "tchar.h"
 #include "wmbt_com.h"
-#include "..\..\common\include\hci_control_api.h"
+#include "..\..\..\dev-kit\btsdk-include\hci_control_api.h"
 #else
 #include <stdio.h>
 #include "../../common/include/hci_control_api.h"
@@ -33,7 +33,18 @@ inline void OpenPortError(const char*  port_num) {printf("Open %s port Failed\n"
 inline int _stricmp(const char* s1, const char *s2) {return strcmp(s1, s2);}
 #define TRANSPORT "/dev/ttyUSBx"
 #endif
+
 typedef unsigned char UINT8;
+typedef int(*command_function_t) (const char* argv[]);
+typedef void(*command_usage_t)    (bool full);
+
+typedef struct
+{
+    char*              command_name;
+    command_function_t command_function;
+    int                arg_count;
+    command_usage_t    command_usage;
+} command_table_t;
 
 UINT8 in_buffer[1024];
 int baud_rate = 3000000;
@@ -145,32 +156,58 @@ DWORD SendWicedCommand(ComHelper *p_port, UINT16 command, LPBYTE payload, DWORD 
     // read HCI response payload
     // read HCI response header
     DWORD received_event = 0;
+    DWORD dwRead;
+    DWORD payload_len;
+    LPBYTE p_data;
+
+    DWORD count = 0;
+
+    printf("Reading from transport interface...\n");
+
     while (received_event != HCI_CONTROL_TEST_EVENT_ENCAPSULATED_HCI_EVENT)
     {
-        DWORD dwRead = p_port->Read((LPBYTE)&in_buffer[0], 5);
+        dwRead = p_port->Read((LPBYTE)&in_buffer[0], 5);
 
-        if (dwRead == 5 && in_buffer[3] > 0)
-            dwRead += p_port->Read((LPBYTE)&in_buffer[5], in_buffer[3]);
+        if (dwRead == 5 && (in_buffer[3] + (in_buffer[4] << 8)) > 0)
+        {
+            printf("Received WICED HCI Header:\n");
+            HexDump(in_buffer, 5);
+
+            printf("Reading %d bytes of payload\n", (in_buffer[3] + (in_buffer[4] << 8)));
+            dwRead += p_port->Read((LPBYTE)&in_buffer[5], (in_buffer[3] + (in_buffer[4] << 8)));
+        }
 
         received_event = in_buffer[1] + (in_buffer[2] << 8);
 
-        DWORD len = dwRead - 5;
-        LPBYTE p_data = &in_buffer[5];
+        payload_len = dwRead - 5;
+
+        p_data = &in_buffer[5];
+
         if (received_event == HCI_CONTROL_EVENT_WICED_TRACE)
         {
-            if (len >= 2)
+            printf("WICED HCI Trace Event received, forwarding to BtSpy...\n");
+            if (payload_len >= 2)
             {
-                if ((len > 2) && (p_data[len - 2] == '\n'))
+                if ((payload_len > 2) && (p_data[payload_len - 2] == '\n'))
                 {
-                    p_data[len - 2] = 0;
-                    len--;
+                    p_data[payload_len - 2] = 0;
+                    payload_len--;
                 }
-                TraceHciPkt(0, p_data, (USHORT)len);
+                TraceHciPkt(0, p_data, (USHORT)payload_len);
             }
         }
         else if (received_event == HCI_CONTROL_EVENT_HCI_TRACE)
         {
-            TraceHciPkt(p_data[0] + 1, &p_data[1], (USHORT)(len - 1));
+            printf("Encapsulated HCI Event received, forwarding to BtSpy...\n");
+            TraceHciPkt(p_data[0] + 1, &p_data[1], (USHORT)(payload_len - 1));
+        }
+        else if (received_event == HCI_CONTROL_EVENT_DEVICE_STARTED)
+        {
+            // Resend WICED HCI command since the app will miss it during initial start
+            printf("Got Device Started Event...Resending WICED HCI Command:\n");
+            HexDump(data, len + header);
+
+            p_port->Write(data, len + header);
         }
         else
         {
@@ -256,11 +293,25 @@ static void print_usage_reset_highspeed(bool full)
 static void print_usage_wiced_reset(bool full)
 {
     printf("Usage: wmbt wiced_reset %s\n", TRANSPORT);
-    printf("       NOTE: Sends HCI_CONTROL_TEST_COMMAND_RX_TEST at the configured MBT_BAUD_RATE\n");
+    printf("       NOTE: Sends HCI_CONTROL_COMMAND_RESET at the configured MBT_BAUD_RATE\n");
 }
 
 static BOOL send_hci_command(ComHelper *p_port, LPBYTE cmd, DWORD cmd_len, LPBYTE expected_evt, DWORD evt_len, BOOL ignore_transport_mode)
 {
+    /* Toggle COM port to get around issue caused by some sample applications
+     * that send the Device Started Event message once the transport interface
+     * has completed initialization
+     */
+    //printf("Attempting to toggle COM port\n");
+    Sleep(500);
+    p_port->ClosePort();
+    if (!p_port->OpenPort(port_num, baud_rate))
+    {
+        OpenPortError(port_num);
+        return FALSE;
+    }
+    //printf("Re-Opened COM port successfully!\n");
+
     // If we are using WICED_HCI, use SendWicedCommand instead
     if ((transport_mode == WICED_HCI) && (ignore_transport_mode != TRUE))
     {
@@ -298,6 +349,20 @@ static BOOL send_hci_command(ComHelper *p_port, LPBYTE cmd, DWORD cmd_len, LPBYT
         }
     }
 
+    if (cmd[1] == 0x09 && cmd[2] == 0x10) //Read BD ADDr Opcode - command complete event contains BD ADDR
+    {
+        if ((dwRead > sizeof(expected_evt))
+            && (memcmp(in_buffer, expected_evt, sizeof(expected_evt)) == 0))
+        {
+            printf("\nSuccess BD_ADDR = %02x%02x%02x%02x%02x%02x\n\n", in_buffer[12], in_buffer[11], in_buffer[10], in_buffer[9], in_buffer[8], in_buffer[7]);
+            return TRUE;
+        }
+        else
+        {
+            return FALSE;
+        }
+    }
+
     if (dwRead == evt_len )
     {
         if (memcmp(in_buffer, expected_evt, evt_len) == 0)
@@ -324,6 +389,7 @@ static int execute_reset(ComHelper *p_port)
         }
         opened = TRUE;
     }
+
     UINT8 hci_reset[] = {0x01, 0x03, 0x0c, 0x00};
     UINT8 hci_reset_cmd_complete_event[] = {0x04, 0x0e, 0x04, 0x01, 0x03, 0x0c, 0x00};
 
@@ -331,6 +397,11 @@ static int execute_reset(ComHelper *p_port)
     if (opened)
         delete p_port;
     return res;
+}
+
+static int execute_reset_indirect(const char* argv[])
+{
+    return execute_reset(NULL);
 }
 
 static int execute_reset_highspeed(ComHelper *p_port)
@@ -348,6 +419,7 @@ static int execute_reset_highspeed(ComHelper *p_port)
         }
         opened = TRUE;
     }
+
     UINT8 hci_reset[] = { 0x01, 0x03, 0x0c, 0x00 };
     UINT8 hci_reset_cmd_complete_event[] = { 0x04, 0x0e, 0x04, 0x01, 0x03, 0x0c, 0x00 };
 
@@ -357,19 +429,30 @@ static int execute_reset_highspeed(ComHelper *p_port)
     return res;
 }
 
-static int execute_wiced_reset(void)
+static int execute_reset_highspeed_indirect(const char* argv[])
 {
+    return execute_reset_highspeed(NULL);
+}
+
+static int execute_wiced_reset(const char* argv[])
+{
+    if (transport_mode != WICED_HCI)
+    {
+        printf("Error: TRANSPORT_MODE Must be set to WICED_HCI to use this command\n\n");
+        return FALSE;
+    }
+
     ComHelper SerialPort;
 
     if (!SerialPort.OpenPort(port_num, baud_rate))
     {
         OpenPortError( port_num);
-        return 0;
+        return FALSE;
     }
 
     SendWicedCommand(&SerialPort, HCI_CONTROL_COMMAND_RESET, NULL, 0);
 
-    return 1;
+    return TRUE;
 }
 
 static void print_usage_download(bool full)
@@ -479,9 +562,10 @@ BOOL SendUpdateBaudRate(ComHelper *p_port, int newBaudRate)
     return (send_hci_command(p_port, arHciCommandTx, sizeof(arHciCommandTx), arBytesExpectedRx, sizeof(arBytesExpectedRx), TRUE));
 }
 
-static int execute_download(const char *pathname)
+static int execute_download(const char* argv[])
 {
     ComHelper SerialPort;
+    const char *pathname = argv[0];
 
     FILE *          fHCD = NULL;
     LONG            nVeryFirstAddress = 0;
@@ -616,20 +700,30 @@ static void print_usage_le_receiver_test(bool full)
     printf ("                rx_frequency: (2402 - 2480) receive frequency, in MHz\n");
 }
 
-static int execute_le_receiver_test(UINT16 rx_frequency)
+static int execute_le_receiver_test(const char* argv[])
 {
+    int rx_frequency = atoi(argv[0]);
+
+    // Validate input args
+    if ((rx_frequency < 2402) || (rx_frequency > 2480))
+    {
+        printf("ERROR: Input args out of bounds!\n\n");
+        print_usage_le_receiver_test(TRUE);
+        return FALSE;
+    }
+
     ComHelper SerialPort;
     BOOL res;
 
     if (!SerialPort.OpenPort(port_num, baud_rate))
     {
         OpenPortError( port_num);
-        return 0;
+        return FALSE;
     }
 
-    UINT8 rx_channel = (rx_frequency - 2402) / 2;;
-    UINT8 hci_le_receiver_test[] = { 0x01, 0x01D, 0x20, 0x01, 0x00 };
-    UINT8 hci_le_receiver_test_cmd_complete_event[] = { 0x04, 0x0e, 0x04, 0x01, 0x01D, 0x20, 0x00 };
+    UINT8 rx_channel = (rx_frequency - 2402) / 2;
+    UINT8 hci_le_receiver_test[] = { 0x01, 0x1D, 0x20, 0x01, 0x00 };
+    UINT8 hci_le_receiver_test_cmd_complete_event[] = { 0x04, 0x0e, 0x04, 0x01, 0x1D, 0x20, 0x00 };
 
     hci_le_receiver_test[4] = rx_channel;
 
@@ -645,7 +739,7 @@ static void print_usage_le_transmitter_test(bool full)
     if (!full)
         return;
     printf ("                tx_frequency: (2402 - 2480) transmit frequency, in MHz\n");
-    printf ("                data_length: (0 - 37)\n");
+    printf ("                data_length:  (0 - 37)\n");
     printf ("                data_pattern: (0 - 7)\n");
     printf ("                    0 - Pseudo-Random bit sequence 9\n");
     printf ("                    1 Pattern of alternating bits '11110000'\n");
@@ -657,20 +751,34 @@ static void print_usage_le_transmitter_test(bool full)
     printf ("                    7 Pattern of alternating bits '0101'\n");
 }
 
-static int execute_le_transmitter_test(UINT16 tx_frequency, UINT8 length, UINT8 pattern)
+static int execute_le_transmitter_test(const char* argv[])
 {
+    int tx_frequency = atoi(argv[0]);
+    int length       = atoi(argv[1]);
+    int pattern      = atoi(argv[2]);
+
+    // Validate input args
+    if (((tx_frequency < 2402) || (tx_frequency > 2480)) ||
+        ((length < 0) || (length > 37))                  ||
+        ((pattern < 0) || (pattern > 7))                  )
+    {
+        printf("ERROR: Input args out of bounds!\n\n");
+        print_usage_le_transmitter_test(TRUE);
+        return FALSE;
+    }
+
     ComHelper SerialPort;
     BOOL res;
 
     if (!SerialPort.OpenPort(port_num, baud_rate))
     {
         OpenPortError( port_num);
-        return 0;
+        return FALSE;
     }
 
     UINT8 tx_channel = (tx_frequency - 2402) / 2;
-    UINT8 hci_le_transmitter_test[] = { 0x01, 0x01E, 0x20, 0x03, 0x00, 0x00, 0x00 };
-    UINT8 hci_le_transmitter_test_cmd_complete_event[] = { 0x04, 0x0e, 0x04, 0x01, 0x01E, 0x20, 0x00 };
+    UINT8 hci_le_transmitter_test[] = { 0x01, 0x1E, 0x20, 0x03, 0x00, 0x00, 0x00 };
+    UINT8 hci_le_transmitter_test_cmd_complete_event[] = { 0x04, 0x0e, 0x04, 0x01, 0x1E, 0x20, 0x00 };
 
     hci_le_transmitter_test[4] = tx_channel;
     hci_le_transmitter_test[5] = length;
@@ -682,12 +790,128 @@ static int execute_le_transmitter_test(UINT16 tx_frequency, UINT8 length, UINT8 
     return res;
 }
 
+
+static void print_usage_le_enhanced_receiver_test(bool full)
+{
+    printf ("Usage: wmbt le_enhanced_receiver_test COMx <rx_channel> <PHY> <modulation_index>\n");
+    if (!full)
+        return;
+    printf ("                rx_channel = (F - 2402) / 2\n");
+    printf ("                    Range: 0 - 39. Frequency Range : 2402 MHz to 2480 MHz\n");
+    printf ("                PHY: (1 - 2)\n");
+    printf ("                    1 Transmitter set to transmit data at 1Ms/s\n");
+    printf ("                    2 Transmitter set to transmit data at 2Ms/s\n");
+    printf ("                modulation_index: (1 - 2)\n");
+    printf ("                    1 Assume transmitter will have a standard modulation index\n");
+    printf ("                    2 Assume transmitter will have a stable modulation index\n");
+}
+
+static int execute_le_enhanced_receiver_test(const char* argv[])
+{
+    int chan_number      = atoi(argv[0]);
+    int phy              = atoi(argv[1]);
+    int modulation_index = atoi(argv[2]);
+
+    // Validate input args
+    if (((chan_number < 0) || (chan_number > 39))          ||
+        ((phy < 1) || (phy > 2))                           ||
+        ((modulation_index < 1) || (modulation_index > 2))  )
+    {
+        printf("ERROR: Input args out of bounds!\n\n");
+        print_usage_le_enhanced_receiver_test(TRUE);
+        return FALSE;
+    }
+
+    ComHelper SerialPort;
+    BOOL res;
+
+    if (!SerialPort.OpenPort(port_num, baud_rate))
+    {
+        OpenPortError( port_num);
+        return FALSE;
+    }
+
+    UINT8 hci_le_enhanced_receiver_test[] = { 0x01, 0x33, 0x20, 0x03, 0x00, 0x00, 0x00 };
+    UINT8 hci_le_enhanced_receiver_test_cmd_complete_event[] = {0x04, 0x0e, 0x04, 0x01, 0x33, 0x20, 0x00};
+    hci_le_enhanced_receiver_test[4] = chan_number;
+    hci_le_enhanced_receiver_test[5] = phy;
+    hci_le_enhanced_receiver_test[6] = modulation_index;
+
+    res = send_hci_command(&SerialPort, hci_le_enhanced_receiver_test, sizeof(hci_le_enhanced_receiver_test), hci_le_enhanced_receiver_test_cmd_complete_event, sizeof(hci_le_enhanced_receiver_test_cmd_complete_event), FALSE);
+
+    if (!res)
+        printf("Failed execute_le_enhanced_receiver_test\n");
+    return res;
+}
+
+static void print_usage_le_enhanced_transmitter_test(bool full)
+{
+    printf ("Usage: wmbt le_enhanced_transmitter_test COMx <tx_channel> <data_length> <data_pattern> <PHY>\n");
+    if (!full)
+        return;
+    printf ("                tx_channel = (F - 2402) / 2\n");
+    printf ("                    Range: 0 - 39. Frequency Range : 2402 MHz to 2480 MHz\n");
+    printf ("                data_length: (0 - 255)\n");
+    printf ("                data_pattern: (0 - 9)\n");
+    printf ("                    0 Pseudo-Random bit sequence 9\n");
+    printf ("                    1 Pattern of alternating bits '11110000'\n");
+    printf ("                    2 Pattern of alternating bits '10101010'\n");
+    printf ("                    3 Pseudo-Random bit sequence 15\n");
+    printf ("                    4 Pattern of All '1' bits\n");
+    printf ("                    5 Pattern of All '0' bits\n");
+    printf ("                    6 Pattern of alternating bits '00001111'\n");
+    printf ("                    7 Pattern of alternating bits '0101'\n");
+    printf ("                PHY: (1 - 2)\n");
+    printf ("                    1 Transmitter set to transmit data at 1Ms/s\n");
+    printf ("                    2 Transmitter set to transmit data at 2Ms/s\n");
+}
+
+static int execute_le_enhanced_transmitter_test(const char* argv[])
+{
+    int chan_number = atoi(argv[0]);
+    int length      = atoi(argv[1]);
+    int pattern     = atoi(argv[2]);
+    int phy         = atoi(argv[3]);
+
+    // Validate input args
+    if (((chan_number < 0) || (chan_number > 39)) ||
+        ((length < 0) || (length > 255))          ||
+        ((pattern < 0) || (pattern > 7))          ||
+        ((phy < 1) || (phy > 2))                   )
+    {
+        printf("ERROR: Input args out of bounds!\n\n");
+        print_usage_le_enhanced_transmitter_test(TRUE);
+        return FALSE;
+    }
+
+    ComHelper SerialPort;
+    BOOL res;
+
+    if (!SerialPort.OpenPort(port_num, baud_rate))
+    {
+        OpenPortError( port_num);
+        return FALSE;
+    }
+
+    UINT8 hci_le_enhanced_transmitter_test[] = {0x01, 0x34, 0x20, 0x04, 0x00, 0x00, 0x00, 0x00};
+    UINT8 hci_le_enhanced_transmitter_test_cmd_complete_event[] = {0x04, 0x0e, 0x04, 0x01, 0x34, 0x20, 0x00};
+    hci_le_enhanced_transmitter_test[4] = chan_number;
+    hci_le_enhanced_transmitter_test[5] = length;
+    hci_le_enhanced_transmitter_test[6] = pattern;
+    hci_le_enhanced_transmitter_test[7] = phy;
+
+    res = send_hci_command(&SerialPort, hci_le_enhanced_transmitter_test, sizeof(hci_le_enhanced_transmitter_test), hci_le_enhanced_transmitter_test_cmd_complete_event, sizeof(hci_le_enhanced_transmitter_test_cmd_complete_event), FALSE);
+    if (!res)
+        printf("Failed execute_le_enhanced_transmitter_test\n");
+    return res;
+}
+
 static void print_usage_le_test_end(bool full)
 {
     printf ("Usage: wmbt le_test_end %s\n", TRANSPORT);
 }
 
-static int execute_le_test_end()
+static int execute_le_test_end(const char* argv[])
 {
     ComHelper SerialPort;
     BOOL res;
@@ -695,7 +919,7 @@ static int execute_le_test_end()
     if (!SerialPort.OpenPort(port_num, baud_rate))
     {
         OpenPortError( port_num);
-        return 0;
+        return FALSE;
     }
 
     UINT8 hci_le_test_end[] = { 0x01, 0x1f, 0x20, 0x00 };
@@ -709,8 +933,7 @@ static int execute_le_test_end()
 
 static void print_usage_tx_frequency_arm(bool full)
 {
-    printf ("Usage: wmbt tx_frequency_arm %s <carrier on/off> <tx_frequency>\n", TRANSPORT);
-    printf ("                                 <mode> <modulation_type> <tx_power>\n");
+    printf ("Usage: wmbt tx_frequency_arm %s <carrier on/off> <tx_frequency> <mode> <modulation_type> <tx_power>\n", TRANSPORT);
     if (!full)
         return;
     printf ("                carrier on/off: 1 - carrier on, 0 - carrier_off\n");
@@ -727,7 +950,7 @@ static void print_usage_tx_frequency_arm(bool full)
     printf ("                       1 = QPSK\n");
     printf ("                       2 = 8PSK\n");
     printf ("                       3 = LE\n");
-    printf ("                tx_power = (-25 - 13) transmit power in dbm\n");
+    printf ("                tx_power = Power Table Index (0:max power)\n");
 }
 
 static void print_usage_receive_only_test(bool full)
@@ -738,26 +961,44 @@ static void print_usage_receive_only_test(bool full)
     printf ("                rx_frequency = (2402 - 2480) receiver frequency, in MHz\n");
 }
 
-static int execute_tx_frequency_arm(UINT8 carrier_on, UINT16 tx_frequency, UINT8 mode, UINT8 modulation_type, int tx_power)
+static int execute_tx_frequency_arm(const char* argv[])
 {
+    int carrier_on      = atoi(argv[0]);
+    int tx_frequency    = atoi(argv[1]);
+    int mode            = atoi(argv[2]);
+    int modulation_type = atoi(argv[3]);
+    int tx_power        = atoi(argv[4]);
+
+    // Validate input args
+    if (((carrier_on < 0) || (carrier_on > 1))            ||
+        ((tx_frequency < 2402) || (tx_frequency > 2480))  ||
+        ((mode < 0) || (mode > 5))                        ||
+        ((modulation_type < 0) || (modulation_type > 3))  ||
+        ((tx_power < 0) || (tx_power > 8))                )
+    {
+        printf("ERROR: Input args out of bounds!\n\n");
+        print_usage_tx_frequency_arm(TRUE);
+        return FALSE;
+    }
+
     ComHelper SerialPort;
     BOOL res;
 
     if (!SerialPort.OpenPort(port_num, baud_rate))
     {
         OpenPortError( port_num);
-        return 0;
+        return FALSE;
     }
 
     UINT8 hci_set_tx_frequency_arm[] = { 0x01, 0x014, 0xfc, 0x07, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00 };
     UINT8 hci_set_tx_frequency_arm_cmd_complete_event[] = { 0x04, 0x0e, 0x04, 0x01, 0x014, 0xfc, 0x00 };
 
     hci_set_tx_frequency_arm[4] = (carrier_on == 0) ? 1 : 0;
-    hci_set_tx_frequency_arm[5] = (carrier_on == 1) ? (tx_frequency - 2402) : 2;
-    hci_set_tx_frequency_arm[6] = mode;
-    hci_set_tx_frequency_arm[7] = modulation_type;
-    hci_set_tx_frequency_arm[8] = (carrier_on == 1) ? 8 : 0;
-    hci_set_tx_frequency_arm[9] = tx_power;
+    hci_set_tx_frequency_arm[5] = (carrier_on == 0) ? 2: (tx_frequency - 2400);
+    hci_set_tx_frequency_arm[6] = (carrier_on == 0) ? 0 : mode;
+    hci_set_tx_frequency_arm[7] = (carrier_on == 0) ? 0 : modulation_type;
+    hci_set_tx_frequency_arm[8] = (carrier_on == 0) ? 0 : 9; // Specify Power Table Index
+    hci_set_tx_frequency_arm[10] = (carrier_on == 0) ? 0 : tx_power;
 
     res = send_hci_command(&SerialPort, hci_set_tx_frequency_arm, sizeof(hci_set_tx_frequency_arm), hci_set_tx_frequency_arm_cmd_complete_event, sizeof(hci_set_tx_frequency_arm_cmd_complete_event), FALSE);
     if (!res)
@@ -765,18 +1006,28 @@ static int execute_tx_frequency_arm(UINT8 carrier_on, UINT16 tx_frequency, UINT8
     return res;
 }
 
-static int execute_receive_only(UINT16 rx_frequency)
+static int execute_receive_only(const char* argv[])
 {
+    int rx_frequency = atoi(argv[0]);
+
+    // Validate input args
+    if ((rx_frequency < 2402) || (rx_frequency > 2480))
+    {
+        printf("ERROR: Input args out of bounds!\n\n");
+        print_usage_receive_only_test(TRUE);
+        return FALSE;
+    }
+
     ComHelper SerialPort;
     BOOL res;
 
     if (!SerialPort.OpenPort(port_num, baud_rate))
     {
         OpenPortError( port_num);
-        return 0;
+        return FALSE;
     }
 
-    UINT8 chan_num = rx_frequency - 2402;
+    UINT8 chan_num = rx_frequency - 2400;
     UINT8 hci_write_receive_only[] = { 0x01, 0x02b, 0xfc, 0x01, 0x00 };
     UINT8 hci_write_receive_only_cmd_complete_event[] = { 0x04, 0x0e, 0x04, 0x01, 0x02b, 0xfc, 0x00 };
 
@@ -820,8 +1071,30 @@ static void print_usage_radio_tx_test(bool full)
     printf("                tx_power = (-25 - +3) transmit power in dbm\n");
 }
 
-static int execute_radio_tx_test(const char *bdaddr, int frequency, int modulation_type, int logical_channel, int bb_packet_type, int packet_length, int tx_power)
+static int execute_radio_tx_test(const char* argv[])
 {
+    int tx_frequency    = atoi(argv[1]);
+    int modulation_type = atoi(argv[2]);
+    int logical_channel = atoi(argv[3]);
+    int bb_packet_type  = atoi(argv[4]);
+    int packet_length   = atoi(argv[5]);
+    int tx_power        = atoi(argv[6]);
+
+    // Validate input args
+    if ((strlen(argv[0]) != 12)                           ||
+        (((tx_frequency < 2402) && (tx_frequency !=0 )) || (tx_frequency > 2480))  ||
+        ((modulation_type < 0) || (modulation_type > 4))  ||
+        ((logical_channel < 0) || (logical_channel > 1))  ||
+        ((bb_packet_type < 3)  || (bb_packet_type > 15))  ||
+        ((packet_length < 0) || (packet_length > 0xffff)) ||
+        ((tx_power < -25) || (tx_power > 3))
+        )
+    {
+        printf("ERROR: Input args out of bounds!\n\n");
+        print_usage_radio_tx_test(TRUE);
+        return FALSE;
+    }
+
     ComHelper SerialPort;
     UINT32     params[6];
     BOOL      res;
@@ -832,18 +1105,24 @@ static int execute_radio_tx_test(const char *bdaddr, int frequency, int modulati
         return 0;
     }
 
-    sscanf_s(bdaddr, "%02x%02x%02x%02x%02x%02x", &params[0], &params[1], &params[2], &params[3], &params[4], &params[5]);
+    sscanf_s(argv[0], "%02x%02x%02x%02x%02x%02x", &params[0], &params[1], &params[2], &params[3], &params[4], &params[5]);
 
-    UINT8 chan_num = frequency - 2402;
+    unsigned char modulation_type_mapping[] = { 0x1, //  0x00 8-bit Pattern
+        0x2, // 0xFF 8-bit Pattern
+        0x3, // 0xAA 8-bit Pattern
+        0x9, // 0xF0 8-bit Pattern
+        0x4  // PRBS9 Pattern
+    };
+
     UINT8 hci_radio_tx_test[20] = { 0x01, 0x051, 0xfc, 0x10, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 };
     UINT8 hci_radio_tx_test_cmd_complete_event[] = { 0x04, 0x0e, 0x04, 0x01, 0x051, 0xfc, 0x00 };
     for (int i = 0; i < 6; i++)
     {
         hci_radio_tx_test[i + 4] = params[5 - i];    //bd address
     }
-    hci_radio_tx_test[10] = (frequency == 0) ? 0 : 1;        //0: hopping, 1: single frequency
-    hci_radio_tx_test[11] = (frequency == 0) ? 0 : (frequency - 2402);  //0: hopping 0-79:channel number (0: 2402 MHz)
-    hci_radio_tx_test[12] = modulation_type;               //data pattern (3: 0xAA  8-bit Pattern)
+    hci_radio_tx_test[10] = (tx_frequency == 0) ? 0 : 1;        //0: hopping, 1: single frequency
+    hci_radio_tx_test[11] = (tx_frequency == 0) ? 0 : (tx_frequency - 2402);  //0: hopping 0-79:channel number (0: 2402 MHz)
+    hci_radio_tx_test[12] = modulation_type_mapping[modulation_type]; //data pattern (3: 0xAA  8-bit Pattern)
     hci_radio_tx_test[13] = logical_channel;               //logical_Channel (0:ACL EDR, 1:ACL Basic)
     hci_radio_tx_test[14] = bb_packet_type;                //modulation type (BB_Packet_Type. 3:DM1, 4: DH1 / 2-DH1)
     hci_radio_tx_test[15] = packet_length & 0xff;          //low byte of packet_length
@@ -887,8 +1166,27 @@ static void print_usage_radio_rx_test(bool full)
     printf("                packet_length: 0 - 65535. Device will limit the length to the max for the baseband packet type\n");
 }
 
-static int execute_radio_rx_test(const char *bdaddr, int frequency, int modulation_type, int logical_channel, int bb_packet_type, int packet_length)
+static int execute_radio_rx_test(const char* argv[])
 {
+    int rx_frequency     = atoi(argv[1]);
+    int modulation_type = atoi(argv[2]);
+    int logical_channel = atoi(argv[3]);
+    int bb_packet_type  = atoi(argv[4]);
+    int packet_length   = atoi(argv[5]);
+
+    // Validate input args
+    if ((strlen(argv[0]) != 12)                           ||
+        ((rx_frequency < 2402) || (rx_frequency > 2480))  ||
+        ((modulation_type < 0) || (modulation_type > 4))  ||
+        ((logical_channel < 0) || (logical_channel > 1))  ||
+        ((bb_packet_type < 3) || (bb_packet_type > 15))   ||
+        ((packet_length < 0) || (packet_length > 0xffff))  )
+    {
+        printf("ERROR: Input args out of bounds!\n\n");
+        print_usage_radio_rx_test(TRUE);
+        return FALSE;
+    }
+
     ComHelper SerialPort;
     UINT32     params[6];
     BOOL      res;
@@ -899,7 +1197,14 @@ static int execute_radio_rx_test(const char *bdaddr, int frequency, int modulati
         return 0;
     }
 
-    sscanf_s(bdaddr, "%02x%02x%02x%02x%02x%02x", &params[0], &params[1], &params[2], &params[3], &params[4], &params[5]);
+    sscanf_s(argv[0], "%02x%02x%02x%02x%02x%02x", &params[0], &params[1], &params[2], &params[3], &params[4], &params[5]);
+
+    unsigned char modulation_type_mapping[] = { 0x1, //  0x00 8-bit Pattern
+        0x2, // 0xFF 8-bit Pattern
+        0x3, // 0xAA 8-bit Pattern
+        0x9, // 0xF0 8-bit Pattern
+        0x4  // PRBS9 Pattern
+    };
 
     UINT8 hci_radio_rx_test[] = {0x01, 0x52, 0xfc, 0x0e, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0};
     UINT8 hci_radio_rx_test_cmd_complete_event[] = {0x04, 0x0e, 0x04, 0x01, 0x52, 0xfc, 0x00};
@@ -907,10 +1212,10 @@ static int execute_radio_rx_test(const char *bdaddr, int frequency, int modulati
     {
         hci_radio_rx_test[i+4] = params[5-i];
     }
-    hci_radio_rx_test[10] = 0xe8;                          //low byte of report perioe in ms (1sec = 1000ms, 0x03e8)
+    hci_radio_rx_test[10] = 0xe8;                          //low byte of report period in ms (1sec = 1000ms, 0x03e8)
     hci_radio_rx_test[11] = 0x03;                          //high byte
-    hci_radio_rx_test[12] = frequency - 2402;
-    hci_radio_rx_test[13] = modulation_type;               //data pattern (3: 0xAA 8-bit Pattern)
+    hci_radio_rx_test[12] = rx_frequency - 2402;
+    hci_radio_rx_test[13] = modulation_type_mapping[modulation_type]; //data pattern (3: 0xAA 8-bit Pattern)
     hci_radio_rx_test[14] = logical_channel;               //logical_Channel (0:ACL EDR, 1:ACL Basic)
     hci_radio_rx_test[15] = bb_packet_type;                //modulation type (BB_Packet_Type. 3:DM1, 4: DH1 / 2-DH1)
     hci_radio_rx_test[16] = packet_length & 0xff;          //low byte of packet_length
@@ -983,268 +1288,500 @@ static int execute_radio_rx_test(const char *bdaddr, int frequency, int modulati
 
     return res;
 }
+
+// Reduced hopping TX test for TELEC Japanese government regulatory testing
+static void print_usage_telec_tx_test(bool full)
+{
+    printf ("Usage: wmbt telec_tx_test %s <bd_addr> <hopping_pattern> <modulation_type> <logical_channel> <bb_packet_type> <packet_length> <tx_power>\n", TRANSPORT);
+    if (!full)
+        return;
+    printf ("                bd_addr: BD_ADDR of Tx device (6 bytes, no space between bytes)\n");
+    printf ("                hopping_pattern: lower, middle, or upper 20 channels\n");
+    printf ("                    0: Lower  20-channels\n");
+    printf ("                    1: Middle 20-channels\n");
+    printf ("                    2: Upper  20-channels\n");
+    printf ("                modulation_type: sets the data pattern\n");
+    printf ("                    0: 0x00 8-bit Pattern\n");
+    printf ("                    1: 0xFF 8-bit Pattern\n");
+    printf ("                    2: 0xAA 8-bit Pattern\n");
+    printf ("                    3: 0xF0 8-bit Pattern\n");
+    printf ("                    4: PRBS9 Pattern\n");
+    printf ("                logical_channel: sets the logical channel to Basic Rate (BR) or Enhanced Data Rate (EDR) for ACL packets\n");
+    printf ("                    0: EDR\n");
+    printf ("                    1: BR\n");
+    printf ("                bb_packet_type: baseband packet type to use\n");
+    printf ("                    3: DM1\n");
+    printf ("                    4: DH1 / 2-DH1\n");
+    printf ("                    8: 3-DH1\n");
+    printf ("                    10: DM3 / 2-DH3\n");
+    printf ("                    11: DH3 / 3-DH3\n");
+    printf ("                    12: EV4 / 2-EV5\n");
+    printf ("                    13: EV5 / 3-EV5\n");
+    printf ("                    14: DM5 / 2-DH5\n");
+    printf ("                    15: DH5 / 3-DH5\n");
+    printf ("                packet_length: 0 - 65535. Device will limit the length to the max for the baseband packet type\n");
+    printf ("                tx_power = (-25 - +3) transmit power in dbm\n");
+}
+
+static int execute_telec_tx_test(const char* argv[])
+{
+    int hopping_pattern = atoi(argv[1]);
+    int modulation_type = atoi(argv[2]);
+    int logical_channel = atoi(argv[3]);
+    int bb_packet_type  = atoi(argv[4]);
+    int packet_length   = atoi(argv[5]);
+    int tx_power        = atoi(argv[6]);
+
+    // Validate input args
+    if ((strlen(argv[0]) != 12)                           ||
+        ((hopping_pattern < 0) || (hopping_pattern > 2))  ||
+        ((modulation_type < 0) || (modulation_type > 4))  ||
+        ((logical_channel < 0) || (logical_channel > 1))  ||
+        ((bb_packet_type < 3)  || (bb_packet_type > 15))  ||
+        ((packet_length < 0) || (packet_length > 0xffff)) ||
+        ((tx_power < -25) || (tx_power > 3))
+        )
+    {
+        printf("ERROR: Input args out of bounds!\n\n");
+        print_usage_telec_tx_test(TRUE);
+        return FALSE;
+    }
+
+    ComHelper SerialPort;
+    UINT32     params[6];
+    BOOL      res;
+
+    if (!SerialPort.OpenPort(port_num, baud_rate))
+    {
+        OpenPortError( port_num);
+        return 0;
+    }
+
+    sscanf_s(argv[0], "%02x%02x%02x%02x%02x%02x", &params[0], &params[1], &params[2], &params[3], &params[4], &params[5]);
+
+    unsigned char modulation_type_mapping[] = { 0x1, //  0x00 8-bit Pattern
+        0x2, // 0xFF 8-bit Pattern
+        0x3, // 0xAA 8-bit Pattern
+        0x9, // 0xF0 8-bit Pattern
+        0x4  // PRBS9 Pattern
+    };
+
+    UINT8 hci_radio_tx_test[20] = { 0x01, 0x051, 0xfc, 0x10, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 };
+    UINT8 hci_radio_tx_test_cmd_complete_event[] = { 0x04, 0x0e, 0x04, 0x01, 0x051, 0xfc, 0x00 };
+    for (int i = 0; i < 6; i++)
+    {
+        hci_radio_tx_test[i + 4] = params[5 - i];    //bd address
+    }
+    hci_radio_tx_test[10] = 0;                             //0: hopping, 1: single frequency
+    hci_radio_tx_test[11] = 0;                             //0: hopping 0-79:channel number (0: 2402 MHz)
+    hci_radio_tx_test[12] = modulation_type_mapping[modulation_type]; //data pattern (3: 0xAA  8-bit Pattern)
+    hci_radio_tx_test[13] = logical_channel;               //logical_Channel (0:ACL EDR, 1:ACL Basic)
+    hci_radio_tx_test[14] = bb_packet_type;                //modulation type (BB_Packet_Type. 3:DM1, 4: DH1 / 2-DH1)
+    hci_radio_tx_test[15] = packet_length & 0xff;          //low byte of packet_length
+    hci_radio_tx_test[16] = (packet_length >> 8) & 0xff;     //high byte of packet_length
+    hci_radio_tx_test[17] = 8;                             //power in dBm
+    hci_radio_tx_test[18] = tx_power;                      //dBm
+    hci_radio_tx_test[19] = 0;                             //power table index
+
+    res = send_hci_command(&SerialPort, hci_radio_tx_test, sizeof(hci_radio_tx_test), hci_radio_tx_test_cmd_complete_event, sizeof(hci_radio_tx_test_cmd_complete_event), FALSE);
+    if (!res)
+        printf("Failed execute_set_tx_frequency_arm\n");
+
+    UINT8 hci_super_peek_poke[] = {0x01, 0x0a, 0xfc, 0x09, 0x05, 0, 0, 0, 0, 0, 0, 0, 0};
+    UINT8 hci_super_peek_poke_cmd_complete_event[] = {0x04, 0x0e, 0x05, 0x01, 0x0a, 0xfc, 0x00, 0x00};
+
+    hci_super_peek_poke[5] = 0xb0;
+    hci_super_peek_poke[6] = 0x86;
+    hci_super_peek_poke[7] = 0x31;
+    hci_super_peek_poke[8] = 0x00;
+    if (hopping_pattern == 0)
+	{
+        hci_super_peek_poke[9] = 0xff;               // lower 20-ch, poke data 0x000fffff to address 0x003186b0
+        hci_super_peek_poke[10] = 0xff;
+        hci_super_peek_poke[11] = 0x0f;
+        hci_super_peek_poke[12] = 0x00;
+
+        hci_super_peek_poke_cmd_complete_event[7] = 0xff;
+	}
+	else if (hopping_pattern == 1)
+	{
+        hci_super_peek_poke[9] = 0x00;               // middle 20-ch, poke data 0xc0000000 to address 0x003186b0
+        hci_super_peek_poke[10] = 0x00;
+        hci_super_peek_poke[11] = 0x00;
+        hci_super_peek_poke[12] = 0xc0;
+
+        hci_super_peek_poke_cmd_complete_event[7] = 0x00;
+	}
+	else
+	{
+        hci_super_peek_poke[9] = 0x00;               // upper 20-ch, poke data 0x00000000 to address 0x003186b0
+        hci_super_peek_poke[10] = 0x00;
+        hci_super_peek_poke[11] = 0x00;
+        hci_super_peek_poke[12] = 0x00;
+
+        hci_super_peek_poke_cmd_complete_event[7] = 0x00;
+	}
+
+	res = send_hci_command(&SerialPort, hci_super_peek_poke, sizeof(hci_super_peek_poke), hci_super_peek_poke_cmd_complete_event, sizeof(hci_super_peek_poke_cmd_complete_event), FALSE);
+    if (!res)
+        printf("Failed execute_super_peek_poke\n");
+
+    hci_super_peek_poke[5] = 0xb4;
+    hci_super_peek_poke[6] = 0x86;
+    hci_super_peek_poke[7] = 0x31;
+    hci_super_peek_poke[8] = 0x00;
+    if (hopping_pattern == 0)
+	{
+        hci_super_peek_poke[9] = 0x00;               // lower 20-ch, poke data 0x00000000 to address 0x003186b4
+        hci_super_peek_poke[10] = 0x00;
+        hci_super_peek_poke[11] = 0x00;
+        hci_super_peek_poke[12] = 0x00;
+
+        hci_super_peek_poke_cmd_complete_event[7] = 0x00;
+	}
+	else if (hopping_pattern == 1)
+	{
+        hci_super_peek_poke[9] = 0xff;               // middle 20-ch, poke data 0x0003ffff to address 0x003186b4
+        hci_super_peek_poke[10] = 0xff;
+        hci_super_peek_poke[11] = 0x03;
+        hci_super_peek_poke[12] = 0x00;
+
+        hci_super_peek_poke_cmd_complete_event[7] = 0xff;
+	}
+	else
+	{
+        hci_super_peek_poke[9] = 0x00;               // poke data 0xf8000000 to address 0x003186b4
+        hci_super_peek_poke[10] = 0x00;
+        hci_super_peek_poke[11] = 0x00;
+        hci_super_peek_poke[12] = 0xf8;
+
+        hci_super_peek_poke_cmd_complete_event[7] = 0x00;
+	}
+
+	res = send_hci_command(&SerialPort, hci_super_peek_poke, sizeof(hci_super_peek_poke), hci_super_peek_poke_cmd_complete_event, sizeof(hci_super_peek_poke_cmd_complete_event), FALSE);
+    if (!res)
+        printf("Failed execute_super_peek_poke\n");
+
+    hci_super_peek_poke[5] = 0xb8;               // poke data 0x00007fff to address 0x003186b8
+    hci_super_peek_poke[6] = 0x86;
+    hci_super_peek_poke[7] = 0x31;
+    hci_super_peek_poke[8] = 0x00;
+    if (hopping_pattern != 2)
+	{
+        hci_super_peek_poke[9] = 0x00;               // lower and middle 20-ch, poke data 0x00000000 to address 0x003186b8
+        hci_super_peek_poke[10] = 0x00;
+        hci_super_peek_poke[11] = 0x00;
+        hci_super_peek_poke[12] = 0x00;
+
+        hci_super_peek_poke_cmd_complete_event[7] = 0x00;
+    }
+	else
+	{
+        hci_super_peek_poke[9] = 0xff;               // upper 20-ch, poke data 0x00007fff to address 0x003186b8
+        hci_super_peek_poke[10] = 0x7f;
+        hci_super_peek_poke[11] = 0x00;
+        hci_super_peek_poke[12] = 0x00;
+
+        hci_super_peek_poke_cmd_complete_event[7] = 0xff;
+	}
+
+	res = send_hci_command(&SerialPort, hci_super_peek_poke, sizeof(hci_super_peek_poke), hci_super_peek_poke_cmd_complete_event, sizeof(hci_super_peek_poke_cmd_complete_event), FALSE);
+    if (!res)
+        printf("Failed execute_super_peek_poke\n");
+
+    hci_super_peek_poke[5] = 0x28;               // poke data 0x00048e81 to address 0x00318628
+    hci_super_peek_poke[6] = 0x86;
+    hci_super_peek_poke[7] = 0x31;
+    hci_super_peek_poke[8] = 0x00;
+    hci_super_peek_poke[9] = 0x81;
+    hci_super_peek_poke[10] = 0x8e;
+    hci_super_peek_poke[11] = 0x04;
+    hci_super_peek_poke[11] = 0x00;
+
+    hci_super_peek_poke_cmd_complete_event[7] = 0x81;
+
+	res = send_hci_command(&SerialPort, hci_super_peek_poke, sizeof(hci_super_peek_poke), hci_super_peek_poke_cmd_complete_event, sizeof(hci_super_peek_poke_cmd_complete_event), FALSE);
+    if (!res)
+        printf("Failed execute_super_peek_poke\n");
+
+    hci_super_peek_poke[5] = 0x38;               // poke data 0x00000014 to address 0x00318638
+    hci_super_peek_poke[6] = 0x86;
+    hci_super_peek_poke[7] = 0x31;
+    hci_super_peek_poke[8] = 0x00;
+    hci_super_peek_poke[9] = 0x14;
+    hci_super_peek_poke[10] = 0x00;
+    hci_super_peek_poke[11] = 0x00;
+    hci_super_peek_poke[12] = 0x00;
+
+    hci_super_peek_poke_cmd_complete_event[7] = 0x14;
+
+	res = send_hci_command(&SerialPort, hci_super_peek_poke, sizeof(hci_super_peek_poke), hci_super_peek_poke_cmd_complete_event, sizeof(hci_super_peek_poke_cmd_complete_event), FALSE);
+    if (!res)
+        printf("Failed execute_super_peek_poke\n");
+
+    hci_super_peek_poke[5] = 0x20;               // poke data 0x00000061 to address 0x00318620
+    hci_super_peek_poke[6] = 0x86;
+    hci_super_peek_poke[7] = 0x31;
+    hci_super_peek_poke[8] = 0x00;
+    hci_super_peek_poke[9] = 0x61;
+    hci_super_peek_poke[10] = 0x00;
+    hci_super_peek_poke[11] = 0x00;
+    hci_super_peek_poke[12] = 0x00;
+
+    hci_super_peek_poke_cmd_complete_event[7] = 0x61;
+
+	res = send_hci_command(&SerialPort, hci_super_peek_poke, sizeof(hci_super_peek_poke), hci_super_peek_poke_cmd_complete_event, sizeof(hci_super_peek_poke_cmd_complete_event), FALSE);
+    if (!res)
+        printf("Failed execute_super_peek_poke\n");
+
+    return res;
+}
+// End of TELEC TX test
+
+static void print_usage_enable_bqb_test_mode(bool full)
+{
+    printf("Usage: wmbt enable_bqb_test_mode %s\n", TRANSPORT);
+}
+
+static int execute_enable_bqb_test_mode(const char* argv[])
+{
+    ComHelper SerialPort;
+    BOOL res;
+
+    if (!SerialPort.OpenPort(port_num, baud_rate))
+    {
+        OpenPortError(port_num);
+        return 0;
+    }
+
+    // Set_Event_Filter
+    UINT8 hci_set_event_filter[] = { 0x01, 0x05, 0x0c, 0x03, 0x02, 0x00, 0x02 };
+    UINT8 hci_set_event_filter_cmd_complete_event[] = { 0x04, 0x0e, 0x04, 0x01, 0x05, 0x0c, 0x00 };
+
+    res = send_hci_command(&SerialPort, hci_set_event_filter, sizeof(hci_set_event_filter), hci_set_event_filter_cmd_complete_event, sizeof(hci_set_event_filter_cmd_complete_event), FALSE);
+    if (!res)
+    {
+        printf("Failed execute_enable_bqb_test_mode\n");
+        return res;
+    }
+
+    // Write_Scan_Enable
+    UINT8 hci_write_scan_enable[] = { 0x01, 0x1a, 0x0c, 0x01, 0x03 };
+    UINT8 hci_write_scan_enable_cmd_complete_event[] = { 0x04, 0x0e, 0x04, 0x01, 0x1a, 0x0c, 0x00 };
+
+    res = send_hci_command(&SerialPort, hci_write_scan_enable, sizeof(hci_write_scan_enable), hci_write_scan_enable_cmd_complete_event, sizeof(hci_write_scan_enable_cmd_complete_event), FALSE);
+    if (!res)
+    {
+        printf("Failed execute_enable_bqb_test_mode\n");
+        return res;
+    }
+
+    // Enable_Device_Under_Test_Mode
+    UINT8 hci_enable_device_under_test_mode[] = { 0x01, 0x03, 0x18, 0x00 };
+    UINT8 hci_enable_device_under_test_mode_cmd_complete_event[] = { 0x04, 0x0e, 0x04, 0x01, 0x03, 0x18, 0x00 };
+
+    res = send_hci_command(&SerialPort, hci_enable_device_under_test_mode, sizeof(hci_enable_device_under_test_mode), hci_enable_device_under_test_mode_cmd_complete_event, sizeof(hci_enable_device_under_test_mode_cmd_complete_event), FALSE);
+    if (!res)
+        printf("Failed execute_enable_bqb_test_mode\n");
+
+    return res;
+}
+
+static void print_usage_read_bd_addr(bool full)
+{
+    printf("Usage: wmbt read_bd_addr %s\n", TRANSPORT);
+}
+
+static int execute_read_bd_addr(const char* argv[])
+{
+    ComHelper SerialPort;
+    BOOL res;
+
+    if (!SerialPort.OpenPort(port_num, baud_rate))
+    {
+        OpenPortError(port_num);
+        return 0;
+    }
+
+    BYTE hci_read_bd_addr[] = { 0x01, 0x09, 0x10, 0x00 };
+    BYTE hci_read_bd_addr_cmd_complete_event[] = { 0x04, 0xe, 0x0A, 0x01, 0x09, 0x10, 0x00 };
+
+    res = send_hci_command(&SerialPort, hci_read_bd_addr, sizeof(hci_read_bd_addr), hci_read_bd_addr_cmd_complete_event, sizeof(hci_read_bd_addr_cmd_complete_event), FALSE);
+    if (!res)
+        printf("Failed execute_read_bd_addr\n");
+
+    return res;
+}
+
+static void print_usage_factory_commit_bd_addr(bool full)
+{
+    printf("Usage: wmbt factory_commit_bd_addr %s <bd_addr>\n", TRANSPORT);
+    printf("       NOTE: This writes the BD_ADDR to the Static Section (SS) area of flash.\n");
+    printf("             To utilize this command, the BD_ADDR MUST be initially set to all FFs.\n");
+
+    if (!full)
+        return;
+
+    printf("                bd_addr: BD_ADDR of device (6 bytes)\n");
+    printf("Example:\n");
+    printf("       wmbt factory_commit_bd_addr COM1 20706A123456\n");
+}
+
+static int execute_factory_commit_bd_addr(const char* argv[])
+{
+    // Validate input args
+    if (strlen(argv[0]) != 12)
+    {
+        printf("ERROR: BD_ADDR not properly formatted!\n\n");
+        print_usage_factory_commit_bd_addr(TRUE);
+        return FALSE;
+    }
+
+    ComHelper SerialPort;
+    UINT32    params[6];
+    BOOL      res;
+
+    if (!SerialPort.OpenPort(port_num, baud_rate))
+    {
+        OpenPortError(port_num);
+        return 0;
+    }
+
+    sscanf_s(argv[0], "%02x%02x%02x%02x%02x%02x", &params[0], &params[1], &params[2], &params[3], &params[4], &params[5]);
+
+
+    BYTE hci_factory_commit_bd_addr[] = { 0x01, 0x10, 0xFC, 0x07, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00 };
+    BYTE hci_factory_commit_bd_addr_cmd_complete_event[] = { 0x04, 0xe, 0x04, 0x01, 0x10, 0xFC, 0x00 };
+
+    for (int i = 0; i < 6; i++)
+    {
+        hci_factory_commit_bd_addr[i + 4] = params[5 - i];    //bd address
+    }
+
+    res = send_hci_command(&SerialPort, hci_factory_commit_bd_addr, sizeof(hci_factory_commit_bd_addr), hci_factory_commit_bd_addr_cmd_complete_event, sizeof(hci_factory_commit_bd_addr_cmd_complete_event), FALSE);
+    if (!res)
+        printf("Failed execute_factory_commit_bd_addr. Make sure the BD ADDR was programmed to all FFs before using this command!\n");
+
+    return res;
+}
+
+static int print_help(const char* argv[])
+{
+    printf("Usage: wmbt help\n");
+    print_usage_download(false);
+    print_usage_reset(false);
+    print_usage_reset_highspeed(false);
+    print_usage_wiced_reset(false);
+    print_usage_le_receiver_test(false);
+    print_usage_le_transmitter_test(false);
+    print_usage_le_enhanced_receiver_test(false);
+    print_usage_le_enhanced_transmitter_test(false);
+    print_usage_le_test_end(false);
+    print_usage_tx_frequency_arm(false);
+    print_usage_receive_only_test(false);
+    print_usage_radio_tx_test(false);
+    print_usage_radio_rx_test(false);
+    print_usage_telec_tx_test(false);
+    print_usage_enable_bqb_test_mode(false);
+    print_usage_read_bd_addr(false);
+    print_usage_factory_commit_bd_addr(false);
+    printf("\nCheck Bluetooth Core 4.1 spec vol. 2 Sections 7.8.28-7.2.30\nfor details of LE Transmitter and Receiver tests\n\n");
+
+    return TRUE;
+}
+
+
+/* Command Table */
+command_table_t wmbt_command_table[] =
+{
+    /*        Command Name                      Command Execution Function              # of args    Helper Function*/
+    { (char*) "help",                           print_help,                             0,           NULL                                      },
+    { (char*) "reset",                          execute_reset_indirect,                 0,           print_usage_reset                         },
+    { (char*) "reset_highspeed",                execute_reset_highspeed_indirect,       0,           print_usage_reset_highspeed               },
+    { (char*) "wiced_reset",                    execute_wiced_reset,                    0,           print_usage_wiced_reset                   },
+    { (char*) "download",                       execute_download,                       1,           print_usage_download                      },
+    { (char*) "le_receiver_test",               execute_le_receiver_test,               1,           print_usage_le_receiver_test              },
+    { (char*) "le_test_end",                    execute_le_test_end,                    0,           print_usage_le_test_end                   },
+    { (char*) "le_transmitter_test",            execute_le_transmitter_test,            3,           print_usage_le_transmitter_test           },
+    { (char*) "le_enhanced_transmitter_test",   execute_le_enhanced_transmitter_test,   4,           print_usage_le_enhanced_transmitter_test  },
+    { (char*) "le_enhanced_receiver_test",      execute_le_enhanced_receiver_test,      3,           print_usage_le_enhanced_receiver_test     },
+    { (char*) "tx_frequency_arm",               execute_tx_frequency_arm,               5,           print_usage_tx_frequency_arm              },
+    { (char*) "receive_only",                   execute_receive_only,                   1,           print_usage_receive_only_test             },
+    { (char*) "radio_tx_test",                  execute_radio_tx_test,                  7,           print_usage_radio_tx_test                 },
+    { (char*) "radio_rx_test",                  execute_radio_rx_test,                  6,           print_usage_radio_rx_test                 },
+    { (char*) "telec_tx_test",                  execute_telec_tx_test,                  7,           print_usage_telec_tx_test                 },
+    { (char*) "enable_bqb_test_mode",           execute_enable_bqb_test_mode,           0,           print_usage_enable_bqb_test_mode          },
+    { (char*) "read_bd_addr",                   execute_read_bd_addr,                   0,           print_usage_read_bd_addr                  },
+    { (char*) "factory_commit_bd_addr",         execute_factory_commit_bd_addr,         1,           print_usage_factory_commit_bd_addr        },
+};
+
+
+/* MAIN */
 #ifdef _WIN32
 int _tmain(int argc, const char* argv[])
 #else
-int main (int argc, char **argv)
+int main (int argc, const char **argv)
 #endif
 {
-    int rx_frequency = 0;
-    int tx_frequency = 0;
-    int pattern = 0;
-    int length = 0;
+    command_function_t command_function = NULL;
+    UINT32 command_table_size = sizeof(wmbt_command_table) / sizeof(command_table_t);
 
-    unsigned char modulation_type_mapping[] = { 0x1, //  0x00 8-bit Pattern
-                                                0x2, // 0xFF 8-bit Pattern
-                                                0x3, // 0xAA 8-bit Pattern
-                                                0x9, // 0xF0 8-bit Pattern
-                                                0x4  // PRBS9 Pattern
-                                               };
-
+    // Check that the environment variables have been set
     if (!get_environment_variables())
         return 0;
+
+    // If not enough input args, print help
+    if (argc < 2)
+    {
+        print_help(NULL);
+        return 0;
+    }
 
     if (argc >= 3)
 #ifdef _WIN32
         sscanf_s(argv[2], "COM%d", &port_num);
 #else
-		strcpy(port_num, argv[2]);
+        strcpy(port_num, argv[2]);
 #endif
 
-    if ((argc >= 2) && (_stricmp(argv[1], "reset") == 0))
+    // Find the given command in the command_table
+    for (UINT32 i = 0; i < command_table_size; i++)
     {
-        if (argc == 3)
+        if (_stricmp(argv[1], wmbt_command_table[i].command_name) == 0)
         {
-            return (execute_reset(NULL));
-        }
-        print_usage_reset(true);
-        return 0;
-    }
-    else if ((argc >= 2) && (_stricmp(argv[1], "reset_highspeed") == 0))
-    {
-        if (argc == 3)
-        {
-            return (execute_reset_highspeed(NULL));
-        }
-        print_usage_reset_highspeed(true);
-        return 0;
-    }
-    else if ((argc >= 2) && (_stricmp(argv[1], "wiced_reset") == 0))
-    {
-        if (argc == 3)
-        {
-            if (transport_mode == WICED_HCI)
-                return (execute_wiced_reset());
-            else
-                printf("Error: TRANSPORT_MODE Must be set to WICED_HCI to use this command\n");
-            return 0;
-        }
-        print_usage_wiced_reset(true);
-        return 0;
-    }
-    else if ((argc >= 3) && (_stricmp(argv[1], "download") == 0))
-    {
-        if (argc == 4)
-        {
-            const char* pathname;
-            pathname = (argv[3]);
-            return (execute_download(pathname));
-        }
-        print_usage_download(true);
-        return 0;
-    }
-    else if ((argc >= 2) && (_stricmp(argv[1], "le_receiver_test") == 0))
-    {
-        if (argc == 4)
-        {
-            rx_frequency = atoi(argv[3]);
-            if ((rx_frequency >= 2402) && (rx_frequency <= 2480))
+            if (i == 0) // help is the only command that does not use the COM port, no need to check args
             {
-                return (execute_le_receiver_test(rx_frequency));
+                print_help(NULL);
+                return 0;
             }
-        }
-        print_usage_le_receiver_test(true);
-        return 0;
-    }
-    else if ((argc >= 2) && (_stricmp(argv[1], "le_test_end") == 0))
-    {
-        if (argc == 3)
-        {
-            return (execute_le_test_end());
-        }
-        print_usage_le_test_end(true);
-        return 0;
-    }
-    else if ((argc >= 2) && (_stricmp(argv[1], "le_transmitter_test") == 0))
-    {
-        if (argc == 6)
-        {
-            tx_frequency = atoi(argv[3]);
-            if ((tx_frequency >= 2402) && (tx_frequency <= 2480))
+            else if ((argc - 3) != wmbt_command_table[i].arg_count) // Check input argument count
             {
-                length = atoi(argv[4]);
-                if ((length > 0) && (length <= 37))
-                {
-                    pattern = atoi(argv[5]);
-                    if ((pattern >= 0) && (pattern < 7))
-                    {
-                        return (execute_le_transmitter_test(tx_frequency, length, pattern));
-                    }
-                }
+                printf("ERROR: Input arg mismatch!\n\n");
+                wmbt_command_table[i].command_usage(TRUE);
+                return 0;
             }
-        }
-        print_usage_le_transmitter_test(true);
-        return 0;
-    }
-    else if ((argc >= 2) && (_stricmp(argv[1], "tx_frequency_arm") == 0))
-    {
-        if (argc >= 5)
-        {
-            int carrier_on;
-            carrier_on = atoi(argv[3]);
-            if ((carrier_on == 0) || (carrier_on == 1))
+            else if (port_num == 0) // Validate COM port
             {
-                if (carrier_on == 0)
-                {
-                    return execute_tx_frequency_arm(carrier_on, 2402, 0, 0, 0);
-                }
-                else if (argc == 8)
-                {
-                    int tx_frequency;
-                    tx_frequency = atoi(argv[4]);
-                    if ((tx_frequency >= 2402) && (tx_frequency <= 2480))
-                    {
-                        int mode;
-                        mode = atoi(argv[5]);
-                        if ((mode >= 0) && (mode <= 5))
-                        {
-                            int modulation_type;
-                            modulation_type = atoi(argv[6]);
-                            if ((modulation_type >= 0) && (modulation_type <= 3))
-                            {
-                                int tx_power;
-                                tx_power = atoi(argv[7]);
-                                if ((tx_power >= -25) && (tx_power <= 13))
-                                {
-                                    return execute_tx_frequency_arm(carrier_on, tx_frequency, mode, modulation_type, tx_power);
-                                }
-                            }
-                        }
-                    }
-                }
+                printf("ERROR: Please specify the COM port correctly.\n\n");
+                wmbt_command_table[i].command_usage(TRUE);
+                return 0;
             }
-        }
-        print_usage_tx_frequency_arm(true);
-        return 0;
-    }
-    else if ((argc >= 2) && (_stricmp(argv[1], "receive_only") == 0))
-    {
-        if (argc == 4)
-        {
-            rx_frequency = atoi(argv[3]);
-            if ((rx_frequency >= 2402) && (rx_frequency <= 2480))
-            {
-                return (execute_receive_only(rx_frequency));
-            }
-        }
-        print_usage_receive_only_test(true);
-        return 0;
-    }
-    else if ((argc >= 2) && (_stricmp(argv[1], "radio_tx_test") == 0))
-    {
-        if (argc == 10)
-        {
-            if (strlen(argv[3]) == 12)
-            {
-                int frequency;
-                frequency = atoi(argv[4]);
-                if ((frequency == 0) || (frequency >= 2402) && (frequency <= 2480))
-                {
-                    int modulation_type;
-                    modulation_type = atoi(argv[5]);
-                    if ((modulation_type >= 0) && (modulation_type <= 4))
-                    {
-                        int logical_channel;
-                        logical_channel = atoi(argv[6]);
-                        if ((logical_channel >= 0) && (logical_channel <= 1))
-                        {
-                            int bb_packet_type;
-                            bb_packet_type = atoi(argv[7]);
-                            if ((bb_packet_type >= 3) && (bb_packet_type <= 15))
-                            {
-                                int packet_length;
-                                packet_length = atoi(argv[8]);
-                                if ((packet_length >= 0) && (packet_length <= 0xffff))
-                                {
-                                    int tx_power;
-                                    tx_power = atoi(argv[9]);
 
-                                    if ((tx_power >= -25) && (tx_power <= 3))
-                                    {
-                                        return execute_radio_tx_test(argv[3], frequency, modulation_type_mapping[modulation_type], logical_channel, bb_packet_type, packet_length, tx_power);
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
-            }
+            command_function = wmbt_command_table[i].command_function;
+
+            break;
         }
-        print_usage_radio_tx_test(true);
+    }
+
+    // If the command was not found, print the help message
+    if (command_function == NULL)
+    {
+        print_help(NULL);
         return 0;
     }
-    else if ((argc >= 2) && (_stricmp(argv[1], "radio_rx_test") == 0))
-    {
-        if (argc == 9)
-        {
-            if (strlen(argv[3]) == 12)
-            {
-                int frequency;
-                frequency = atoi(argv[4]);
-                if ((frequency >= 2402) && (frequency <= 2480))
-                {
-                    int modulation_type;
-                    modulation_type = atoi(argv[5]);
-                    if ((modulation_type >= 0) && (modulation_type <= 4))
-                    {
-                        int logical_channel;
-                        logical_channel = atoi(argv[6]);
-                        if ((logical_channel >= 0) && (logical_channel <= 1))
-                        {
-                            int bb_packet_type;
-                            bb_packet_type = atoi(argv[7]);
-                            if ((bb_packet_type >= 3) && (bb_packet_type <= 15))
-                            {
-                                int packet_length;
-                                packet_length = atoi(argv[8]);
-                                if ((packet_length >= 0) && (packet_length <= 0xffff))
-                                {
-                                    return execute_radio_rx_test(argv[3], frequency, modulation_type_mapping[modulation_type], logical_channel, bb_packet_type, packet_length);
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-        }
-        print_usage_radio_rx_test(true);
-        return 0;
-    }
-    else
-    {
-        printf("Usage: wmbt help\n");
-        print_usage_download(false);
-        print_usage_reset(false);
-        print_usage_reset_highspeed(false);
-        print_usage_wiced_reset(false);
-        print_usage_le_receiver_test(false);
-        print_usage_le_transmitter_test(false);
-        print_usage_le_test_end(false);
-        print_usage_tx_frequency_arm(false);
-        print_usage_receive_only_test(false);
-        print_usage_radio_tx_test(false);
-        print_usage_radio_rx_test(false);
-        printf("\nCheck Bluetooth Core 4.1 spec vol. 2 Sections 7.8.28-7.2.30\nfor details of LE Transmitter and Receiver tests\n");
-    }
+
+    // Execute command
+    command_function(&argv[3]);
+
     return 0;
 }
