@@ -8,7 +8,7 @@
 #include "..\..\..\dev-kit\btsdk-include\hci_control_api.h"
 #else
 #include <stdio.h>
-#include "../../common/include/hci_control_api.h"
+#include "../../../../dev-kit/btsdk-include/hci_control_api.h"
 
 #include "common/wmbt_uart.h"
 #include <stdlib.h>
@@ -18,6 +18,8 @@
 #define sprintf_s(a,b,c,d)	sprintf(a,c,d)
 #define sscanf_s	sscanf
 #define fopen_s(a,b,c)		fopen(b,c)
+#include <unistd.h>
+#define Sleep(a) sleep(a)
 #endif
 #define HCI       0
 #define WICED_HCI 1
@@ -60,7 +62,7 @@ void HexDump(LPBYTE p, DWORD dwLen)
     for (DWORD i = 0; i < dwLen; ++i)
     {
         if (i % 16 == 0)
-            printf("%04X <", i);
+            printf("%04lX <", i);
         printf(" %02X", p[i]);
         if ((i + 1) % 16 == 0)
             printf(" >\n");
@@ -144,7 +146,7 @@ DWORD SendWicedCommand(ComHelper *p_port, UINT16 command, LPBYTE payload, DWORD 
     if (len)
         memcpy(&data[header], payload, len);
 
-    sprintf_s(descr, sizeof(descr), "Xmit %3u bytes: ", len + header);
+    sprintf_s(descr, sizeof(descr), "Xmit %3lu bytes: ", len + header);
     printf("Sending WICED HCI Command:\n");
     HexDump(data, len + header);
 
@@ -489,7 +491,7 @@ BOOL SendHcdRecord(ComHelper *p_port, ULONG nAddr, ULONG nHCDRecSize, BYTE * arH
     arHciCommandTx[7] = (nAddr >> 24) & 0xff;
     memcpy(&arHciCommandTx[8], arHCDDataBuffer, nHCDRecSize);
 
-    printf("sending record at:0x%x\n", nAddr);
+    printf("sending record at:0x%lx\n", nAddr);
     return (send_hci_command(p_port, arHciCommandTx, 4 + 4 + nHCDRecSize, arBytesExpectedRx, sizeof(arBytesExpectedRx), TRUE));
 }
 
@@ -617,7 +619,7 @@ static int execute_download(const char* argv[])
     {
         if (!SendHcdRecord(&SerialPort, nAddr, nHCDRecSize, arHCDDataBuffer))
         {
-            printf("Failed to send hcd portion at %x\n", nAddr);
+            printf("Failed to send hcd portion at %lx\n", nAddr);
             if (fHCD)
                 fclose(fHCD);
             return 0;
@@ -1105,7 +1107,7 @@ static int execute_radio_tx_test(const char* argv[])
         return 0;
     }
 
-    sscanf_s(argv[0], "%02x%02x%02x%02x%02x%02x", &params[0], &params[1], &params[2], &params[3], &params[4], &params[5]);
+    sscanf_s(argv[0], "%02lx%02lx%02lx%02lx%02lx%02lx", &params[0], &params[1], &params[2], &params[3], &params[4], &params[5]);
 
     unsigned char modulation_type_mapping[] = { 0x1, //  0x00 8-bit Pattern
         0x2, // 0xFF 8-bit Pattern
@@ -1197,7 +1199,7 @@ static int execute_radio_rx_test(const char* argv[])
         return 0;
     }
 
-    sscanf_s(argv[0], "%02x%02x%02x%02x%02x%02x", &params[0], &params[1], &params[2], &params[3], &params[4], &params[5]);
+    sscanf_s(argv[0], "%02lx%02lx%02lx%02lx%02lx%02lx", &params[0], &params[1], &params[2], &params[3], &params[4], &params[5]);
 
     unsigned char modulation_type_mapping[] = { 0x1, //  0x00 8-bit Pattern
         0x2, // 0xFF 8-bit Pattern
@@ -1357,7 +1359,7 @@ static int execute_telec_tx_test(const char* argv[])
         return 0;
     }
 
-    sscanf_s(argv[0], "%02x%02x%02x%02x%02x%02x", &params[0], &params[1], &params[2], &params[3], &params[4], &params[5]);
+    sscanf_s(argv[0], "%02lx%02lx%02lx%02lx%02lx%02lx", &params[0], &params[1], &params[2], &params[3], &params[4], &params[5]);
 
     unsigned char modulation_type_mapping[] = { 0x1, //  0x00 8-bit Pattern
         0x2, // 0xFF 8-bit Pattern
@@ -1647,7 +1649,7 @@ static int execute_factory_commit_bd_addr(const char* argv[])
         return 0;
     }
 
-    sscanf_s(argv[0], "%02x%02x%02x%02x%02x%02x", &params[0], &params[1], &params[2], &params[3], &params[4], &params[5]);
+    sscanf_s(argv[0], "%02lx%02lx%02lx%02lx%02lx%02lx", &params[0], &params[1], &params[2], &params[3], &params[4], &params[5]);
 
 
     BYTE hci_factory_commit_bd_addr[] = { 0x01, 0x10, 0xFC, 0x07, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00 };

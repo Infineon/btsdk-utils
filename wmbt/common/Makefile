@@ -10,7 +10,7 @@ OBJ_FILES := wmbt_uart.o \
 		btspy_ux.o \
 		wmbt.o
 
-LOCAL_INCLUDES := . ../common ../../../common/include
+LOCAL_INCLUDES ?= . ../common ../../../common/include
 
 
 %.o: ../common/%.c
