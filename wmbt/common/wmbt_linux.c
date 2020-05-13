@@ -24,6 +24,9 @@
 
 #include <sys/ioctl.h>
 
+#ifdef __APPLE__
+#include <IOKit/serial/ioss.h>
+#endif
 
 int kbhit()
 {
@@ -45,8 +48,9 @@ int kbhit()
     return bytesWaiting;
 }
 
-void init_uart(int uart_fd)
+void init_uart(int uart_fd, int baudRate)
 {
+#if !defined(__APPLE__)
     struct termios termios;
     tcflush(uart_fd, TCIOFLUSH);
     tcgetattr(uart_fd, &termios);
@@ -67,4 +71,32 @@ void init_uart(int uart_fd)
     cfsetospeed(&termios, B115200);
     cfsetispeed(&termios, B115200);
     tcsetattr(uart_fd, TCSANOW, &termios);
+
+#else
+    struct termios      options;
+    int ret;
+    int BAUDRATE = baudRate;
+
+    // block non-root users from using this port
+    ret = ioctl(uart_fd, TIOCEXCL);
+
+    // clear the O_NONBLOCK flag, so that read() will
+    //   block and wait for data.
+    fcntl(uart_fd, F_SETFL, O_APPEND | O_NONBLOCK);
+
+    // grab the options for the serial port
+    tcgetattr(uart_fd, &options);
+
+    options.c_cflag |= CREAD | CLOCAL | CS8;
+    options.c_iflag = 0;
+    options.c_oflag = 0;
+    options.c_lflag = 0;
+    options.c_cc[VMIN]=0;
+    options.c_cc[VTIME]=0;
+    options.c_cflag &= ~CRTSCTS;
+
+    tcsetattr(uart_fd, TCSAFLUSH, &options);
+
+    ret = ioctl(uart_fd, IOSSIOSPEED, &BAUDRATE);
+#endif
 }

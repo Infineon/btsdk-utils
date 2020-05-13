@@ -305,7 +305,11 @@ static BOOL send_hci_command(ComHelper *p_port, LPBYTE cmd, DWORD cmd_len, LPBYT
      * has completed initialization
      */
     //printf("Attempting to toggle COM port\n");
+#ifdef __APPLE__
+    Sleep(1);
+#else
     Sleep(500);
+#endif
     p_port->ClosePort();
     if (!p_port->OpenPort(port_num, baud_rate))
     {
@@ -339,8 +343,8 @@ static BOOL send_hci_command(ComHelper *p_port, LPBYTE cmd, DWORD cmd_len, LPBYT
 
     if (cmd[1] == 0x1f && cmd[2] == 0x20) //LE Test End Opcode - command complete event contains num_packets_received
     {
-        if ((dwRead > sizeof(expected_evt))
-            && (memcmp(in_buffer, expected_evt, sizeof(expected_evt)) == 0))
+        if ((dwRead > evt_len)
+            && (memcmp(in_buffer, expected_evt, evt_len) == 0))
         {
             printf("\nSuccess num_packets_received = %d\n\n", in_buffer[7] + (in_buffer[8] << 8));
             return TRUE;

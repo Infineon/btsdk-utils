@@ -12,7 +12,7 @@ extern 	int debug;
 
 extern "C"
 {
-	void init_uart(int uart_fd);
+	void init_uart(int uart_fd, int baudRate);
 	void dump(uchar *out, int len);
 };
 
@@ -40,7 +40,7 @@ BOOL ComHelper::OpenPort( const char*  port, int baudRate )
 		printf( "Opened port %s\n", port);
 	}
 
-	init_uart(m_handle);
+	init_uart(m_handle, baudRate);
 	return true;
 }
 
