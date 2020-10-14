@@ -8,6 +8,10 @@ RF performance of Cypress SoC Bluetooth BR/EDR/LE devices.
 Each test sends an HCI or WICED HCI command to the device and then waits for an
 HCI or WICED HCI Command Complete event from the device respectively.
 
+The wmbt utility can be found in BTSDK installations in the workspace where shared
+dependencies are installed, and is referred to as <WMBT_PATH> below:
+mtb_shared\wiced_btsdk\tools\btsdk-utils\wmbt\Release
+
 Device configuration:
 
     The Cypress Bluetooth device to be tested must expose an HCI UART and that this
@@ -32,7 +36,7 @@ Environment Variables:
 
     As an example, to configure MBT_BAUD_RATE for 3 Mbps on a windows command line:
 
-    <WICED-Studio>\wiced_tools\wmbt\Release>set MBT_BAUD_RATE=3000000
+    mtb_shared\wiced_btsdk\tools\btsdk-utils\wmbt\Release>set MBT_BAUD_RATE=3000000
 
     TRANSPORT_MODE: The Bluetooth Core Specification [1] defines the Host Controller
     Interface (HCI) which provides a standardized communication protocol between the
@@ -53,7 +57,7 @@ Environment Variables:
 
     As an example, to configure TRANSPORT_MODE for HCI on a windows command line:
 
-    <WICED-Studio>\wiced_tools\wmbt\Release>set TRANSPORT_MODE=0
+    <WMBT_PATH>set TRANSPORT_MODE=0
 
 
 *Reset
@@ -67,7 +71,7 @@ The example below sends HCI_Reset command at the configured MBT_BAUD_RATE to the
 and processes the HCI Command Complete event (BLUETOOTH SPECIFICATION Version 4.1
 [Vol 2], Section 7.3.2 for details).
 
-<WICED-Studio>\wiced_tools\wmbt\Release> wmbt reset_highspeed COM23
+<WMBT_PATH> wmbt reset_highspeed COM23
 Opened COM23 at speed: 3000000
 Sending HCI Command:
 0000 < 01 03 0C 00 >
@@ -97,7 +101,7 @@ where:
 
 The example below starts the LE receiver test on Channel 2 (2406 MHz).
 
-<WICED-Studio>\wiced_tools\wmbt\Release> wmbt le_receiver_test COM23 2406
+<WMBT_PATH> wmbt le_receiver_test COM23 2406
 MBT_BAUD_RATE:  3000000
 TRANSPORT_MODE: 0 (HCI)
 
@@ -146,7 +150,7 @@ where:
 The example below starts the test and instructs the device to transmit packets
 on Channel 2 (2406 MHz), with a 10-byte payload of all ones (1s).
 
-<WICED-Studio>\wiced_tools\wmbt\Release> wmbt le_transmitter_test COM23 2406 10 4
+<WMBT_PATH> wmbt le_transmitter_test COM23 2406 10 4
 MBT_BAUD_RATE:  3000000
 TRANSPORT_MODE: 0 (HCI)
 
@@ -170,7 +174,7 @@ Usage: wmbt le_test_end COMx
 
 The example below stops the active test.
 
-<WICED-Studio>\wiced_tools\ wmbt\Release> wmbt le_test_end COM23
+<WMBT_PATH> wmbt le_test_end COM23
 MBT_BAUD_RATE:  3000000
 TRANSPORT_MODE: 0 (HCI)
 
@@ -217,15 +221,15 @@ where:
                    indexes will depend on the SoC BT device used.
 
 The example below turns the carrier ON and instructs the device to transmit an
-unmodulated pattern on 2402 MHz at 3 dBm.
+unmodulated pattern on 2402 MHz at max tx power.
 
-<WICED-Studio>\wiced_tools\ wmbt\Release> wmbt tx_frequency_arm COM23 1 2402 1 2 1
+<WMBT_PATH> wmbt tx_frequency_arm COM23 1 2402 1 2 0
 MBT_BAUD_RATE:  3000000
 TRANSPORT_MODE: 0 (HCI)
 
 Opened COM23 at speed: 3000000
 Sending HCI Command:
-0000 < 01 14 FC 07 00 00 01 02 09 00 01 >
+0000 < 01 14 FC 07 00 00 01 02 09 00 00 >
 Received HCI Event:
 0000 < 04 0E 04 01 14 FC 00 >
 Success
@@ -234,7 +238,7 @@ Close Serial Bus
 To stop the test, send the command a second time to the same COM port with the
 carrier on/off parameter set to zero (0).
 
-<WICED-Studio>\wiced_tools\ wmbt\Release> wmbt tx_frequency_arm COM23 0 2402 1 2 3
+<WMBT_PATH> wmbt tx_frequency_arm COM23 0 2402 1 2 3
 MBT_BAUD_RATE:  3000000
 TRANSPORT_MODE: 0 (HCI)
 
@@ -283,19 +287,20 @@ where:
         15: DH5 / 3-DH5
     packet_length: 0 ÅE65535. Device will limit the length to the max for the baseband packet type.
         eg) if DM1 packets are sent, the maximum packet size is 17 bytes.
-    tx_power = (ÅE5 to +3) transmit power, in dBm.
+    tx_power = Power Table Index with [0] being max power. Number of
+               indexes will depend on the SoC BT device used.
 
 The example below instructs the device to transmit 0xAA 8-bit Pattern on the 2402 MHz and ACL Basic
-with DM1 packet (17 bytes) type at -3 dBm.
+with DM1 packet (17 bytes) type at max tx power
 
-<WICED-Studio>\wiced_tools\wmbt\Release> wmbt radio_tx_test COM23 112233445566 2402 2 1 3 17 -3
+<WMBT_PATH> wmbt radio_tx_test COM23 112233445566 2402 2 1 3 17 0
 MBT_BAUD_RATE:  3000000
 TRANSPORT_MODE: 0 (HCI)
 
 Opened COM23 at speed: 3000000
 Sending HCI Command:
 0000 < 01 51 FC 10 66 55 44 33 22 11 01 00 03 01 03 11 >
-0010 < 00 08 FD 00 >
+0010 < 00 09 00 00 >
 Received HCI Event:
 0000 < 04 0E 04 01 51 FC 00 >
 Success
@@ -342,7 +347,7 @@ The Cypress SoC BT device will generate the statistics report of the Rx Test eve
 
 The example below instructs the device to receive 0xAA 8-bit Pattern on the 2402 MHz and ACL Basic with DM1 packet type.
 
-<WICED-Studio>\wiced_tools\wmbt\Release> wmbt radio_rx_test COM23 112233445566 2402 2 1 3 17
+<WMBT_PATH> wmbt radio_rx_test COM23 112233445566 2402 2 1 3 17
 MBT_BAUD_RATE:  3000000
 TRANSPORT_MODE: 0 (HCI)
 
@@ -417,13 +422,15 @@ where:
 The example below instructs the device to transmit 0xAA 8-bit Pattern on the lower 20-channels and ACL Basic
 with DM1 packet (17 bytes) type at -3 dBm.
 
-<WICED-Studio>\wiced_tools\wmbt\Release> wmbt telec_tx_test COM23 112233445566 0 2 1 3 17 -3
+<WMBT_PATH> wmbt telec_tx_test COM23 112233445566 0 2 1 3 17 -3
 MBT_BAUD_RATE:  3000000
 TRANSPORT_MODE: 0 (HCI)
 
-Opened COM23 at speed: 3000000
+Opened COM4 at speed: 3000000
+Close Serial Bus
+Opened COM4 at speed: 3000000
 Sending HCI Command:
-0000 < 01 51 FC 10 66 55 44 33 22 11 01 00 03 01 03 11 >
+0000 < 01 51 FC 10 66 55 44 33 22 11 00 00 03 01 03 11 >
 0010 < 00 08 FD 00 >
 Received HCI Event:
 0000 < 04 0E 04 01 51 FC 00 >
@@ -434,13 +441,56 @@ The last byte of the HCI event is the operation status,
 where 0 signifies that operation was successful and test started to run.
 The test continues to run until device is reset.
 
+Opened COM4 at speed: 3000000
+Sending HCI Command:
+0000 < 01 0A FC 09 05 B0 86 31 00 FF FF 0F 00 >
+Received HCI Event:
+0000 < 04 0E 05 01 0A FC 00 FF >
+Success
+Close Serial Bus
+Opened COM4 at speed: 3000000
+Sending HCI Command:
+0000 < 01 0A FC 09 05 B4 86 31 00 00 00 00 00 >
+Received HCI Event:
+0000 < 04 0E 05 01 0A FC 00 00 >
+Success
+Close Serial Bus
+Opened COM4 at speed: 3000000
+Sending HCI Command:
+0000 < 01 0A FC 09 05 B8 86 31 00 00 00 00 00 >
+Received HCI Event:
+0000 < 04 0E 05 01 0A FC 00 00 >
+Success
+Close Serial Bus
+Opened COM4 at speed: 3000000
+Sending HCI Command:
+0000 < 01 0A FC 09 05 28 86 31 00 81 8E 00 00 >
+Received HCI Event:
+0000 < 04 0E 05 01 0A FC 00 81 >
+Success
+Close Serial Bus
+Opened COM4 at speed: 3000000
+Sending HCI Command:
+0000 < 01 0A FC 09 05 38 86 31 00 14 00 00 00 >
+Received HCI Event:
+0000 < 04 0E 05 01 0A FC 00 14 >
+Success
+Close Serial Bus
+Opened COM4 at speed: 3000000
+Sending HCI Command:
+0000 < 01 0A FC 09 05 20 86 31 00 61 00 00 00 >
+Received HCI Event:
+0000 < 04 0E 05 01 0A FC 00 61 >
+Success
+Close Serial Bus
+
 *Read BD ADDR
 
 This command reads the BD ADDR that is currently programmed for the DUT.
 
 Usage: wmbt read_bd_addr COMx
 
-<WICED-Studio>\wiced_tools\wmbt\Release> wmbt read_bd_addr COM23
+<WMBT_PATH> wmbt read_bd_addr COM23
 MBT_BAUD_RATE:  3000000
 TRANSPORT_MODE: 0 (HCI)
 
@@ -466,7 +516,7 @@ Usage: wmbt factory_commit_bd_addr COMx <bd_addr>
 
 The example below sets the BD ADDR to 112233445566
 
-<WICED-Studio>\wiced_tools\wmbt\Release> wmbt factory_commit_bd_addr COM23 112233445566
+<WMBT_PATH> wmbt factory_commit_bd_addr COM23 112233445566
 MBT_BAUD_RATE:  3000000
 TRANSPORT_MODE: 0 (HCI)
 
@@ -477,3 +527,10 @@ Received HCI Event:
 0000 < 04 0E 04 01 10 FC 00 >
 Success
 Close Serial Bus
+
+NOTE: The factory_commit_bd_addr command is not supported by all devices, e.g.
+those with no internal or external nvram interface. When the device returns the
+below status code, it means ÅgBT_ERROR_CODE_UNKNOWN_HCI_COMMANDÅh.
+
+Received HCI Event:
+0000 < 04 0E 04 01 10 FC "01" >

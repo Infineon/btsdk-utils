@@ -1,31 +1,44 @@
-About BTSpy
-===========
+BTSpy
+=====
 
+Overview
+========
 BTSpy is a trace utility that can be used in the WICED BT platforms to
-view protocol and generic trace messages from the embedded device.  The
-tool can run on Windows, Linux or OSX systems. It listens on the UDP
-port 9876 and can receive specially formatted message from another
-application on the same or different system.
+view protocol and generic trace messages from the embedded device.
 
-To start BTSpy execute wiced_btsdk\tools\btsdk-utils\BTSpy\<OS>, BTSpy.exe on
-Windows or bt_spy.dmg on MacOS or use RunBtSpy.sh on Linux.  Note that only a
-single instance of the application can be executed on a machine.
+This application can also generate Bluetooth Snoop logs by saving the
+logs from menu Tools -> File Logging Options -> Generate snoop log file
+To view the snoop log, use a utility such as FrontLine Viewer.
 
-To read traces over the UART interface the Client Control application
-(wiced_btsdk\tools\btsdk-host-apps-bt-ble\client_control), should open the
-serial port associated with the HCI UART port of the CYW20xxx, which should be
-configured to use the same baud rate as configured in the embedded application.
+The tool can run on Windows, Linux, or macOS systems. It listens on
+the UDP port 9876 and can receive a specially formatted message
+from another application on the same or different system.
 
-How to send application traces to BTSpy
-=======================================
+To start BTSpy execute wiced_btsdk\tools\btsdk-utils\BTSpy\<OS>:
+- Windows: BTSpy.exe
+- macOS: bt_spy.dmg
+- Linux: RunBtSpy.sh
 
+Note that only a single instance of the application can be executed
+on a machine.
+
+To read traces over the UART interface, the Client Control application
+(wiced_btsdk\tools\btsdk-host-apps-bt-ble\client_control) should open
+the serial port associated with the HCI UART port of the WICED BT device,
+which should be configured to use the same baud rate configured
+in the embedded application.
+
+Send application traces to BTSpy
+================================
 The WICED_BT_TRACE macro can be used by the embedded application to
-generate a trace.  The output can be routed to peripheral UART (PUART)
-or to the WICED HCI UART.  To route traces to the BTSpy the application
+generate a trace.  The output can be routed to Peripheral UART (PUART)
+or to the WICED HCI UART.  To route traces to BTSpy, the application
 should use WICED UART.
 
-The application should configure the transport for appropriate type,
-mode and baud rate.
+The application should configure the transport for the appropriate type,
+mode, and baud rate.
+
+(The below snippets are from RFCOMM Serial Port application).
 
 const wiced_transport_cfg_t transport_cfg =
 {
@@ -50,37 +63,59 @@ available on all WICED boards and on all operating systems.
 
 #define HCI_UART_DEFAULT_BAUD   3000000
 
-The application should initialize the transport during application
-initialization:
-wiced_transport_init(&transport_cfg);
+The application should initialize the transport during the application
+initialization. The application can then configure the system to
+route traces to WICED HCI.
 
-Application can then configure system to route traces to WICED HCI:
-wiced_set_debug_uart(WICED_ROUTE_DEBUG_TO_WICED_UART);
+APPLICATION_START( )
+{
+    ...
+    wiced_transport_init(&transport_cfg);
+    ...
+    wiced_set_debug_uart(WICED_ROUTE_DEBUG_TO_WICED_UART);
+    ....
+}
 
 If the application needs to send trace messages or HCI packets
-(see section below) longer than 240 bytes it should also have a separate
+(see the section below) longer than 240 bytes it should also have a separate
 transmit transport pool.  If HCI traces are routed over UART, the
 size of the buffers in the pool should be enough to handle any command,
 event or data packet (1024 bytes).
 
-// create special pool for sending data to the MCU
-host_trans_pool = wiced_transport_create_buffer_pool(TRANS_UART_BUFFER_SIZE, TRANS_MAX_BUFFERS);
+wiced_transport_buffer_pool_t*  host_trans_pool;
 
-How to send HCI traces to BTSpy
-===============================
+APPLICATION_START()
+{
+    ....
+    // create special pool for sending data to the MCU
+    host_trans_pool = wiced_transport_create_buffer_pool(TRANS_UART_BUFFER_SIZE, TRANS_MAX_BUFFERS);
+    .....
+}
 
-The firmware which is executed on a CYW207xx device consists of the
-embedded BT stack (in ROM) and the BT controller. The embedded
-application can register with the stack to receive copies of all
-commands, events and data packets exchanged between the stack and
+Send HCI traces to BTSpy
+========================
+The firmware which is executed on a BT WICED device consists of the
+embedded BT stack (in ROM) and the BT controller. The embedded application
+can register with the stack to receive copies of all
+commands, events, and data packets exchanged between the stack and
 the controller and route them to the BTSpy.
 
-To register a callback which will be called whenever HCI packet is
+To register a callback which will be called whenever the HCI packet is
 exchanged between the upper layer stack and the controller, the
 application can call the API wiced_bt_dev_register_hci_trace.
 For example:
-wiced_bt_dev_register_hci_trace(hello_sensor_hci_trace_cback);
+
+void application_init( void )
+{
+    ....
+    wiced_bt_dev_register_hci_trace(app_trace_callback);
+    ....
+}
 
 When the callback is executed, the application can just forward
-the packet to the transport:
-wiced_transport_send_hci_trace(host_trans_pool, type, length, p_data);
+the packet to the transport. For example:
+
+void app_trace_callback( wiced_bt_hci_trace_type_t type, uint16_t length, uint8_t* p_data )
+{
+    wiced_transport_send_hci_trace( host_trans_pool, type, length, p_data);
+}

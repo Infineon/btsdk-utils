@@ -1106,7 +1106,7 @@ static void print_usage_radio_tx_test(bool full)
     printf("                    14: DM5 / 2-DH5\n");
     printf("                    15: DH5 / 3-DH5\n");
     printf("                packet_length: 0 - 65535. Device will limit the length to the max for the baseband packet type\n");
-    printf("                tx_power = (-25 - +3) transmit power in dbm\n");
+	printf("                tx_power = Power Table Index (0:max power)\n");
 }
 
 static int execute_radio_tx_test(const char* argv[])
@@ -1125,7 +1125,7 @@ static int execute_radio_tx_test(const char* argv[])
         ((logical_channel < 0) || (logical_channel > 1))  ||
         ((bb_packet_type < 3)  || (bb_packet_type > 15))  ||
         ((packet_length < 0) || (packet_length > 0xffff)) ||
-        ((tx_power < -25) || (tx_power > 3))
+        ((tx_power < 0) || (tx_power > 8))
         )
     {
         printf("ERROR: Input args out of bounds!\n\n");
@@ -1165,9 +1165,9 @@ static int execute_radio_tx_test(const char* argv[])
     hci_radio_tx_test[14] = bb_packet_type;                //modulation type (BB_Packet_Type. 3:DM1, 4: DH1 / 2-DH1)
     hci_radio_tx_test[15] = packet_length & 0xff;          //low byte of packet_length
     hci_radio_tx_test[16] = (packet_length >> 8) & 0xff;     //high byte of packet_length
-    hci_radio_tx_test[17] = 8;                             //power in dBm
-    hci_radio_tx_test[18] = tx_power;                      //dBm
-    hci_radio_tx_test[19] = 0;                             //power table index
+    hci_radio_tx_test[17] = 9;                             //Specify Power Table Index
+    hci_radio_tx_test[18] = 0;                             //dBm
+    hci_radio_tx_test[19] = tx_power;                      //power table index
 
     res = send_hci_command(&SerialPort, hci_radio_tx_test, sizeof(hci_radio_tx_test), hci_radio_tx_test_cmd_complete_event, sizeof(hci_radio_tx_test_cmd_complete_event), FALSE);
     if (!res)
