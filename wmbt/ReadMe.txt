@@ -378,6 +378,10 @@ Statistics Report received:
 
 *TELEC Reduced Hopping Transmit Test
 --------------------------------
+!!!! Important Note !!!!
+Sometime frequency hopping pattern cannot set to specified frequency.
+User needs to re-execute this command when such frequency pattern was seen.
+
 TELEC the Japanese government regulatory testing requires 20-ch reduced hopping pattern
 at each lower, middle, upper 20-channels. The DUT will transmit a specific packet at
 specific hopping channels. It works standalone, does not require peer device.
@@ -422,18 +426,25 @@ where:
 The example below instructs the device to transmit 0xAA 8-bit Pattern on the lower 20-channels and ACL Basic
 with DM1 packet (17 bytes) type at -3 dBm.
 
-<WMBT_PATH> wmbt telec_tx_test COM23 112233445566 0 2 1 3 17 -3
-MBT_BAUD_RATE:  3000000
+<WMBT_PATH> wmbt telec_tx_test COM4 112233445566 2 4 0 15 2000 0
+MBT_BAUD_RATE:  115200
 TRANSPORT_MODE: 0 (HCI)
 
-Opened COM4 at speed: 3000000
+Opened COM4 at speed: 115200
 Close Serial Bus
-Opened COM4 at speed: 3000000
+Opened COM4 at speed: 115200
 Sending HCI Command:
-0000 < 01 51 FC 10 66 55 44 33 22 11 00 00 03 01 03 11 >
-0010 < 00 08 FD 00 >
+0000 < 01 51 FC 10 66 55 44 33 22 11 00 00 04 00 0F D0 >
+0010 < 07 08 00 00 >
 Received HCI Event:
 0000 < 04 0E 04 01 51 FC 00 >
+Success
+Close Serial Bus
+Opened COM4 at speed: 115200
+Sending HCI Command:
+0000 < 01 0A FC 09 05 B0 86 31 00 00 00 00 00 >
+Received HCI Event:
+0000 < 04 0E 05 01 0A FC 00 00 >
 Success
 Close Serial Bus
 
@@ -441,42 +452,79 @@ The last byte of the HCI event is the operation status,
 where 0 signifies that operation was successful and test started to run.
 The test continues to run until device is reset.
 
-Opened COM4 at speed: 3000000
+Opened COM4 at speed: 115200
 Sending HCI Command:
-0000 < 01 0A FC 09 05 B0 86 31 00 FF FF 0F 00 >
+0000 < 01 0A FC 09 05 B4 86 31 00 00 00 00 F8 >
+Received HCI Event:
+0000 < 04 0E 05 01 0A FC 00 00 >
+Success
+Close Serial Bus
+Opened COM4 at speed: 115200
+Sending HCI Command:
+0000 < 01 0A FC 09 05 B8 86 31 00 FF 7F 00 00 >
 Received HCI Event:
 0000 < 04 0E 05 01 0A FC 00 FF >
 Success
 Close Serial Bus
-Opened COM4 at speed: 3000000
+Opened COM4 at speed: 115200
 Sending HCI Command:
-0000 < 01 0A FC 09 05 B4 86 31 00 00 00 00 00 >
+0000 < 01 0A FC 05 04 28 86 31 00 >
+Received HCI Event:
+0000 < 04 0E 05 01 0A FC 00 B3 >
+Success, read data = B3
+Sending HCI Command:
+0000 < 01 0A FC 05 04 29 86 31 00 >
+Received HCI Event:
+0000 < 04 0E 05 01 0A FC 00 8E >
+Success, read data = 8E
+Sending HCI Command:
+0000 < 01 0A FC 05 04 2A 86 31 00 >
+Received HCI Event:
+0000 < 04 0E 05 01 0A FC 00 04 >
+Success, read data = 04
+Sending HCI Command:
+0000 < 01 0A FC 05 04 2B 86 31 00 >
 Received HCI Event:
 0000 < 04 0E 05 01 0A FC 00 00 >
-Success
+Success, read data = 00
 Close Serial Bus
-Opened COM4 at speed: 3000000
+Opened COM4 at speed: 115200
 Sending HCI Command:
-0000 < 01 0A FC 09 05 B8 86 31 00 00 00 00 00 >
+0000 < 01 0A FC 09 05 28 86 31 00 B2 8E 04 00 >
 Received HCI Event:
-0000 < 04 0E 05 01 0A FC 00 00 >
+0000 < 04 0E 05 01 0A FC 00 B2 >
 Success
 Close Serial Bus
-Opened COM4 at speed: 3000000
-Sending HCI Command:
-0000 < 01 0A FC 09 05 28 86 31 00 81 8E 00 00 >
-Received HCI Event:
-0000 < 04 0E 05 01 0A FC 00 81 >
-Success
-Close Serial Bus
-Opened COM4 at speed: 3000000
+Opened COM4 at speed: 115200
 Sending HCI Command:
 0000 < 01 0A FC 09 05 38 86 31 00 14 00 00 00 >
 Received HCI Event:
 0000 < 04 0E 05 01 0A FC 00 14 >
 Success
 Close Serial Bus
-Opened COM4 at speed: 3000000
+Opened COM4 at speed: 115200
+Sending HCI Command:
+0000 < 01 0A FC 05 04 20 86 31 00 >
+Received HCI Event:
+0000 < 04 0E 05 01 0A FC 00 60 >
+Success, read data = 60
+Sending HCI Command:
+0000 < 01 0A FC 05 04 21 86 31 00 >
+Received HCI Event:
+0000 < 04 0E 05 01 0A FC 00 00 >
+Success, read data = 00
+Sending HCI Command:
+0000 < 01 0A FC 05 04 22 86 31 00 >
+Received HCI Event:
+0000 < 04 0E 05 01 0A FC 00 00 >
+Success, read data = 00
+Sending HCI Command:
+0000 < 01 0A FC 05 04 23 86 31 00 >
+Received HCI Event:
+0000 < 04 0E 05 01 0A FC 00 00 >
+Success, read data = 00
+Close Serial Bus
+Opened COM4 at speed: 115200
 Sending HCI Command:
 0000 < 01 0A FC 09 05 20 86 31 00 61 00 00 00 >
 Received HCI Event:

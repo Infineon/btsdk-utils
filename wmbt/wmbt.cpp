@@ -1,10 +1,10 @@
 /*
- * Copyright 2016-2020, Cypress Semiconductor Corporation or a subsidiary of
- * Cypress Semiconductor Corporation. All Rights Reserved.
+ * Copyright 2016-2021, Cypress Semiconductor Corporation (an Infineon company) or
+ * an affiliate of Cypress Semiconductor Corporation.  All rights reserved.
  *
  * This software, including source code, documentation and related
- * materials ("Software"), is owned by Cypress Semiconductor Corporation
- * or one of its subsidiaries ("Cypress") and is protected by and subject to
+ * materials ("Software") is owned by Cypress Semiconductor Corporation
+ * or one of its affiliates ("Cypress") and is protected by and subject to
  * worldwide patent protection (United States and foreign),
  * United States copyright laws and international treaty provisions.
  * Therefore, you may use this Software only as provided in the license
@@ -13,7 +13,7 @@
  * If no EULA applies, Cypress hereby grants you a personal, non-exclusive,
  * non-transferable license to copy, modify, and compile the Software
  * source code solely for use in connection with Cypress's
- * integrated circuit products. Any reproduction, modification, translation,
+ * integrated circuit products.  Any reproduction, modification, translation,
  * compilation, or representation of this Software except as specified
  * above is prohibited without the express written permission of Cypress.
  *
@@ -83,6 +83,11 @@ typedef struct
 UINT8 in_buffer[1024];
 int baud_rate = 3000000;
 int transport_mode = HCI; // 0:HCI, 1:WICED_HCI
+
+// prototype definition
+static DWORD send_hci_memory_peek_command(ComHelper *, DWORD);
+
+
 
 //
 // print hexadecimal digits of an array of bytes formatted as:
@@ -410,6 +415,162 @@ static BOOL send_hci_command(ComHelper *p_port, LPBYTE cmd, DWORD cmd_len, LPBYT
         }
     }
     return FALSE;
+}
+
+
+static DWORD send_hci_memory_peek_command(ComHelper *p_port, DWORD address)
+{
+	DWORD result = 0;
+
+	UINT8 hci_memory_peek[] = { 0x01, 0x0a, 0xfc, 0x05, 0x04, 0, 0, 0, 0 };
+	UINT8 hci_memory_peek_cmd_complete_event[] = { 0x04, 0x0e, 0x05, 0x01, 0x0a, 0xfc, 0x00, 0x00 };
+
+	// 1st byte read
+	hci_memory_peek[5] = address & 0xFF;               // poke data to address
+	hci_memory_peek[6] = (address >> 8) & 0xFF;
+	hci_memory_peek[7] = (address >> 16) & 0xFF;
+	hci_memory_peek[8] = (address >> 24) & 0xFF;
+
+	/* Toggle COM port to get around issue caused by some sample applications
+	 * that send the Device Started Event message once the transport interface
+	 * has completed initialization
+	 */
+	 //printf("Attempting to toggle COM port\n");
+#ifdef __APPLE__
+	Sleep(1);
+#else
+	Sleep(500);
+#endif
+	p_port->ClosePort();
+	if (!p_port->OpenPort(port_num, baud_rate))
+	{
+		OpenPortError(port_num);
+		return FALSE;
+	}
+	//printf("Re-Opened COM port successfully!\n");
+
+	// write HCI Command
+	printf("Sending HCI Command:\n");
+	HexDump(hci_memory_peek, sizeof(hci_memory_peek));
+
+	p_port->Write(hci_memory_peek, sizeof(hci_memory_peek));
+
+	// read HCI response header
+	DWORD dwRead = p_port->Read((LPBYTE)&in_buffer[0], 3);
+
+	// read HCI response payload
+	if (dwRead == 3 && in_buffer[2] > 0)
+		dwRead += p_port->Read((LPBYTE)&in_buffer[3], in_buffer[2]);
+
+	printf("Received HCI Event:\n");
+	HexDump(in_buffer, dwRead);
+
+	if (dwRead == sizeof(hci_memory_peek_cmd_complete_event))
+	{
+		if (memcmp(in_buffer, hci_memory_peek_cmd_complete_event, sizeof(hci_memory_peek_cmd_complete_event)-1) == 0)
+		{
+			result = in_buffer[7];
+			printf("Success, read data = %02X\n", in_buffer[7]);
+		}
+	}
+
+    // 2nd byte read
+	++address;
+	hci_memory_peek[5] = address & 0xFF;               // poke data to address
+	hci_memory_peek[6] = (address >> 8) & 0xFF;
+	hci_memory_peek[7] = (address >> 16) & 0xFF;
+	hci_memory_peek[8] = (address >> 24) & 0xFF;
+
+	// write HCI Command
+	printf("Sending HCI Command:\n");
+	HexDump(hci_memory_peek, sizeof(hci_memory_peek));
+
+	p_port->Write(hci_memory_peek, sizeof(hci_memory_peek));
+
+	// read HCI response header
+	dwRead = p_port->Read((LPBYTE)&in_buffer[0], 3);
+
+	// read HCI response payload
+	if (dwRead == 3 && in_buffer[2] > 0)
+		dwRead += p_port->Read((LPBYTE)&in_buffer[3], in_buffer[2]);
+
+	printf("Received HCI Event:\n");
+	HexDump(in_buffer, dwRead);
+
+	if (dwRead == sizeof(hci_memory_peek_cmd_complete_event))
+	{
+		if (memcmp(in_buffer, hci_memory_peek_cmd_complete_event, sizeof(hci_memory_peek_cmd_complete_event) - 1) == 0)
+		{
+			result |= (in_buffer[7])<<8;
+			printf("Success, read data = %02X\n", in_buffer[7]);
+		}
+	}
+
+	// 3rd byte read
+	++address;
+	hci_memory_peek[5] = address & 0xFF;               // poke data to address
+	hci_memory_peek[6] = (address >> 8) & 0xFF;
+	hci_memory_peek[7] = (address >> 16) & 0xFF;
+	hci_memory_peek[8] = (address >> 24) & 0xFF;
+
+	// write HCI Command
+	printf("Sending HCI Command:\n");
+	HexDump(hci_memory_peek, sizeof(hci_memory_peek));
+
+	p_port->Write(hci_memory_peek, sizeof(hci_memory_peek));
+
+	// read HCI response header
+	dwRead = p_port->Read((LPBYTE)&in_buffer[0], 3);
+
+	// read HCI response payload
+	if (dwRead == 3 && in_buffer[2] > 0)
+		dwRead += p_port->Read((LPBYTE)&in_buffer[3], in_buffer[2]);
+
+	printf("Received HCI Event:\n");
+	HexDump(in_buffer, dwRead);
+
+	if (dwRead == sizeof(hci_memory_peek_cmd_complete_event))
+	{
+		if (memcmp(in_buffer, hci_memory_peek_cmd_complete_event, sizeof(hci_memory_peek_cmd_complete_event) - 1) == 0)
+		{
+			result |= (in_buffer[7]) << 16;
+			printf("Success, read data = %02X\n", in_buffer[7]);
+		}
+	}
+
+	// 4th byte read
+	++address;
+	hci_memory_peek[5] = address & 0xFF;               // poke data to address
+	hci_memory_peek[6] = (address >> 8) & 0xFF;
+	hci_memory_peek[7] = (address >> 16) & 0xFF;
+	hci_memory_peek[8] = (address >> 24) & 0xFF;
+
+	// write HCI Command
+	printf("Sending HCI Command:\n");
+	HexDump(hci_memory_peek, sizeof(hci_memory_peek));
+
+	p_port->Write(hci_memory_peek, sizeof(hci_memory_peek));
+
+	// read HCI response header
+	dwRead = p_port->Read((LPBYTE)&in_buffer[0], 3);
+
+	// read HCI response payload
+	if (dwRead == 3 && in_buffer[2] > 0)
+		dwRead += p_port->Read((LPBYTE)&in_buffer[3], in_buffer[2]);
+
+	printf("Received HCI Event:\n");
+	HexDump(in_buffer, dwRead);
+
+	if (dwRead == sizeof(hci_memory_peek_cmd_complete_event))
+	{
+		if (memcmp(in_buffer, hci_memory_peek_cmd_complete_event, sizeof(hci_memory_peek_cmd_complete_event) - 1) == 0)
+		{
+			result |= (in_buffer[7]) << 24;
+			printf("Success, read data = %02X\n", in_buffer[7]);
+		}
+	}
+
+	return result;
 }
 
 static int execute_reset(ComHelper *p_port)
@@ -1500,7 +1661,7 @@ static int execute_telec_tx_test(const char* argv[])
     if (!res)
         printf("Failed execute_super_peek_poke\n");
 
-    hci_super_peek_poke[5] = 0xb8;               // poke data 0x00007fff to address 0x003186b8
+    hci_super_peek_poke[5] = 0xb8;                   // poke data 0x00007fff to address 0x003186b8
     hci_super_peek_poke[6] = 0x86;
     hci_super_peek_poke[7] = 0x31;
     hci_super_peek_poke[8] = 0x00;
@@ -1527,16 +1688,19 @@ static int execute_telec_tx_test(const char* argv[])
     if (!res)
         printf("Failed execute_super_peek_poke\n");
 
-    hci_super_peek_poke[5] = 0x28;               // poke data 0x00048e81 to address 0x00318628
+	res = send_hci_memory_peek_command(&SerialPort, 0x00318628);
+	res = res ^ 0x01;
+
+	hci_super_peek_poke[5] = 0x28;               // poke data to address 0x00318628
     hci_super_peek_poke[6] = 0x86;
     hci_super_peek_poke[7] = 0x31;
     hci_super_peek_poke[8] = 0x00;
-    hci_super_peek_poke[9] = 0x81;
-    hci_super_peek_poke[10] = 0x8e;
-    hci_super_peek_poke[11] = 0x04;
-    hci_super_peek_poke[11] = 0x00;
+    hci_super_peek_poke[9] = res & 0xFF;
+    hci_super_peek_poke[10] = (res >> 8) & 0xFF;
+    hci_super_peek_poke[11] = (res >> 16) & 0xFF;
+    hci_super_peek_poke[12] = (res >> 24) & 0xFF;
 
-    hci_super_peek_poke_cmd_complete_event[7] = 0x81;
+    hci_super_peek_poke_cmd_complete_event[7] = hci_super_peek_poke[9];
 
 	res = send_hci_command(&SerialPort, hci_super_peek_poke, sizeof(hci_super_peek_poke), hci_super_peek_poke_cmd_complete_event, sizeof(hci_super_peek_poke_cmd_complete_event), FALSE);
     if (!res)
@@ -1557,16 +1721,19 @@ static int execute_telec_tx_test(const char* argv[])
     if (!res)
         printf("Failed execute_super_peek_poke\n");
 
-    hci_super_peek_poke[5] = 0x20;               // poke data 0x00000061 to address 0x00318620
+	res = send_hci_memory_peek_command(&SerialPort, 0x00318620);
+	res = res ^ 0x01;
+
+	hci_super_peek_poke[5] = 0x20;               // poke data 0x00000061 to address 0x00318620
     hci_super_peek_poke[6] = 0x86;
     hci_super_peek_poke[7] = 0x31;
     hci_super_peek_poke[8] = 0x00;
-    hci_super_peek_poke[9] = 0x61;
-    hci_super_peek_poke[10] = 0x00;
-    hci_super_peek_poke[11] = 0x00;
-    hci_super_peek_poke[12] = 0x00;
+    hci_super_peek_poke[9] = res & 0xFF;
+    hci_super_peek_poke[10] = (res >> 8) & 0xFF;
+    hci_super_peek_poke[11] = (res >> 16) & 0xFF;
+    hci_super_peek_poke[12] = (res >> 24) & 0xFF;
 
-    hci_super_peek_poke_cmd_complete_event[7] = 0x61;
+    hci_super_peek_poke_cmd_complete_event[7] = hci_super_peek_poke[9];
 
 	res = send_hci_command(&SerialPort, hci_super_peek_poke, sizeof(hci_super_peek_poke), hci_super_peek_poke_cmd_complete_event, sizeof(hci_super_peek_poke_cmd_complete_event), FALSE);
     if (!res)
