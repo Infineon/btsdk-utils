@@ -64,7 +64,7 @@
 
 //#define DEBUG
 
-#define MAX_FIRMWARE_ID_LENGTH          16
+#define MAX_METADATA_LENGTH             16
 #define HASH_SIZE                       32
 
 #define JSON_FILE_HEADER   "{\n  \"manifest\": {\n    \"firmware\": {\n"
@@ -104,9 +104,10 @@ int main(int argc, char *argv[])
     FILE * pfOutput = NULL;
     FILE * pfMetadata = NULL;
     FILE * pfKey = NULL;
+    FILE * pfDfuBin = NULL;
     unsigned int cid = 0, pid = 0, vid = 0, major_version = 0, minor_version = 0, revision = 0, build = 0;
-    unsigned char firmware_id[MAX_FIRMWARE_ID_LENGTH];
-    unsigned int firmware_id_length = 0;
+    unsigned char metadata[MAX_METADATA_LENGTH];
+    unsigned int metadata_length = 0;
     size_t file_size;
     size_t read_size;
     sha2_context sha2_ctx;
@@ -118,6 +119,8 @@ int main(int argc, char *argv[])
     int i;
     char * p_metadata_filename = NULL;
     char * p_firmware_filename = NULL;
+    char dfu_image_filename[256];
+    char * p_ext;
 
     /*
      * Read command line arguments
@@ -231,30 +234,43 @@ int main(int argc, char *argv[])
         return -1;
     }
 
+    strncpy(dfu_image_filename, p_firmware_filename, 256);
+    p_ext = strstr(dfu_image_filename, ".ota.bin");
+    if (p_ext)
+        strcpy(p_ext, ".dfu.bin");
+    else
+        strcat(dfu_image_filename, ".dfu.bin");
+    pfDfuBin = fopen(dfu_image_filename, "wb");
+    if (!pfDfuBin)
+    {
+        printf("Failed to open .dfu.bin file for writing!\n");
+        return -1;
+    }
+
     /*
-     * Construct firmware ID
+     * Construct metadata
      */
     i = 0;
-    firmware_id[i++] = (unsigned char) cid;
-    firmware_id[i++] = (unsigned char)(cid >> 8);
-    firmware_id[i++] = (unsigned char) pid;
-    firmware_id[i++] = (unsigned char)(pid >> 8);
-    firmware_id[i++] = (unsigned char) vid;
-    firmware_id[i++] = (unsigned char)(vid >> 8);
-    firmware_id[i++] = (unsigned char) major_version;
-    firmware_id[i++] = (unsigned char) minor_version;
-    firmware_id[i++] = (unsigned char) revision;
-    firmware_id[i++] = (unsigned char) build;
-    firmware_id[i++] = (unsigned char)(build >> 8);
-    firmware_id_length = i;
+    metadata[i++] = (unsigned char) cid;
+    metadata[i++] = (unsigned char)(cid >> 8);
+    metadata[i++] = (unsigned char) pid;
+    metadata[i++] = (unsigned char)(pid >> 8);
+    metadata[i++] = (unsigned char) vid;
+    metadata[i++] = (unsigned char)(vid >> 8);
+    metadata[i++] = (unsigned char) major_version;
+    metadata[i++] = (unsigned char) minor_version;
+    metadata[i++] = (unsigned char) revision;
+    metadata[i++] = (unsigned char) build;
+    metadata[i++] = (unsigned char)(build >> 8);
+    metadata_length = i;
 
     /*
      * Generate digest
      */
     sha2_starts(&sha2_ctx, 0);
 
-    // Firmware ID should be included in the hash
-    sha2_update(&sha2_ctx, firmware_id, firmware_id_length);
+    // Metadata should be included in the hash
+    sha2_update(&sha2_ctx, metadata, metadata_length);
 
     // Then the firmware
     fseek(pfInput, 0, SEEK_END);
@@ -272,6 +288,7 @@ int main(int argc, char *argv[])
         return -1;
     }
     sha2_update(&sha2_ctx, buf, file_size);
+    fwrite(buf, 1, file_size, pfDfuBin);
     free(buf);
 
     sha2_finish(&sha2_ctx, digest);
@@ -311,9 +328,15 @@ int main(int argc, char *argv[])
     }
 
     /*
-     * Save signature in the metadata file
+     * Add signature to the end of DFU image file
      */
-    fwrite(signature, 1, sizeof(signature), pfMetadata);
+    fwrite(signature, 1, sizeof(signature), pfDfuBin);
+    fclose(pfDfuBin);
+
+    /*
+    * Save metadata to file
+    */
+    fwrite(metadata, 1, metadata_length, pfMetadata);
     fclose(pfMetadata);
 
     /*
@@ -322,7 +345,7 @@ int main(int argc, char *argv[])
     fwrite(JSON_FILE_HEADER, 1, strlen(JSON_FILE_HEADER), pfOutput);
     fwrite(FIRMWARE_FILE_TAG, 1, strlen(FIRMWARE_FILE_TAG), pfOutput);
     fwrite("\"", 1, 1, pfOutput);
-    fwrite(p_firmware_filename, 1, strlen(p_firmware_filename), pfOutput);
+    fwrite(dfu_image_filename, 1, strlen(dfu_image_filename), pfOutput);
     fwrite("\",\n", 1, 3, pfOutput);
     fwrite(METADATA_FILE_TAG, 1, strlen(METADATA_FILE_TAG), pfOutput);
     fwrite("\"", 1, 1, pfOutput);
@@ -330,7 +353,8 @@ int main(int argc, char *argv[])
     fwrite("\",\n", 1, 3, pfOutput);
     fwrite(FIRMWARE_ID_TAG, 1, strlen(FIRMWARE_ID_TAG), pfOutput);
     fwrite("\"", 1, 1, pfOutput);
-    write_hex_data_to_file(pfOutput, firmware_id, firmware_id_length);
+    // Firmware ID can be two bytes company ID plus any vendor specific data. We use metadata here for demo only.
+    write_hex_data_to_file(pfOutput, metadata, metadata_length);
     fwrite("\"\n", 1, 2, pfOutput);
     fwrite(JSON_FILE_FOOTER, 1, strlen(JSON_FILE_FOOTER), pfOutput);
 
