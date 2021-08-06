@@ -35,8 +35,8 @@
 *
 * DFU Meta Data generator
 *
-* Usage: DfuMeta cid=0x<company ID> pid=0x<product ID> vid=0x<hardware version> version=<n.n.n.n> -k <key file> -i <input file> -m <output metadata file> -o <output manifest file>
-* For example: DfuMeta cid=0x0131 pid=0x3016 vid=0x0002 version=2.0.0.191 -k ecdsa256_key.pri.bin -i BLE_Mesh_OnOffServer_CYBT-213043-MESH.ota.bin -m metadata -o manifest.json
+* Usage: DfuMeta cid=0x<company ID> pid=0x<product ID> vid=0x<hardware version> version=<n.n> -k <key file> -i <input file> -m <output metadata file> -o <output manifest file>
+* For example: DfuMeta cid=0x0131 pid=0x3016 vid=0x0002 version=1.1 -k ecdsa256_key.pri.bin -i BLE_Mesh_OnOffServer_CYBT-213043-MESH.ota.bin -m metadata -o manifest.json
 *
 * This console application takes input binary file, compute the hash from firmware ID + binary file,
 * sign it with a private key.
@@ -47,7 +47,7 @@
 *     "firmware": {
 *       "firmware_file": "BLE_Mesh_OnOffServer_CYBT-213043-MESH.ota.bin",
 *       "metadata_file": "metadata",
-*       "firmware_id": "310116300200020000BF00"
+*       "firmware_id": "3101163002000101"
 *     }
 *   }
 * }
@@ -105,7 +105,7 @@ int main(int argc, char *argv[])
     FILE * pfMetadata = NULL;
     FILE * pfKey = NULL;
     FILE * pfDfuBin = NULL;
-    unsigned int cid = 0, pid = 0, vid = 0, major_version = 0, minor_version = 0, revision = 0, build = 0;
+    unsigned int cid = 0, pid = 0, vid = 0, major_version = 0, minor_version = 0;
     unsigned char metadata[MAX_METADATA_LENGTH];
     unsigned int metadata_length = 0;
     size_t file_size;
@@ -120,14 +120,14 @@ int main(int argc, char *argv[])
     char * p_metadata_filename = NULL;
     char * p_firmware_filename = NULL;
     char dfu_image_filename[256];
-    char * p_ext;
+    char * p;
 
     /*
      * Read command line arguments
      */
     if (argc != 13)
     {
-        printf("Usage: %s cid=0x<company ID> pid=0x<product ID> vid=0x<hardware version> version=<n.n.n.n> -k <key file> -i <input file> -m <output metadata file> -o <output manifest file>\n", argv[0]);
+        printf("Usage: %s cid=0x<company ID> pid=0x<product ID> vid=0x<hardware version> version=<n.n> -k <key file> -i <input file> -m <output metadata file> -o <output manifest file>\n", argv[0]);
         return -1;
     }
     for (i = 1; i < argc; i++)
@@ -158,7 +158,7 @@ int main(int argc, char *argv[])
         }
         else if (strstr(argv[i], "version=") == argv[i])
         {
-            if (sscanf(argv[i], "version=%d.%d.%d.%d", &major_version, &minor_version, &revision, &build) != 4)
+            if (sscanf(argv[i], "version=%d.%d", &major_version, &minor_version) != 2)
             {
                 printf("Wrong version\n");
                 return -1;
@@ -234,10 +234,14 @@ int main(int argc, char *argv[])
         return -1;
     }
 
+    // remove path
+    if ((p = strrchr(p_firmware_filename, '\\')) != NULL)
+        p_firmware_filename = p + 1;
+    // construct DFU image file name
     strncpy(dfu_image_filename, p_firmware_filename, 256);
-    p_ext = strstr(dfu_image_filename, ".ota.bin");
-    if (p_ext)
-        strcpy(p_ext, ".dfu.bin");
+    p = strstr(dfu_image_filename, ".ota.bin");
+    if (p)
+        strcpy(p, ".dfu.bin");
     else
         strcat(dfu_image_filename, ".dfu.bin");
     pfDfuBin = fopen(dfu_image_filename, "wb");
@@ -259,9 +263,6 @@ int main(int argc, char *argv[])
     metadata[i++] = (unsigned char)(vid >> 8);
     metadata[i++] = (unsigned char) major_version;
     metadata[i++] = (unsigned char) minor_version;
-    metadata[i++] = (unsigned char) revision;
-    metadata[i++] = (unsigned char) build;
-    metadata[i++] = (unsigned char)(build >> 8);
     metadata_length = i;
 
     /*
