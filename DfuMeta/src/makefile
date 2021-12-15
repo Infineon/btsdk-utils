@@ -32,20 +32,25 @@
 #
 TARGET = DfuMeta
 
-OBJS = dfumeta.o \
-       sha2.o \
-       ecc_pp.o \
-       multprecision.o
+CC=gcc
+
+OBJ_FILES := dfumeta.o \
+             sha2.o \
+             ecc_pp.o \
+             multprecision.o
+
+LOCAL_INCLUDES := ../../src
+
+%.o: ../../src/%.c
+	$(CC) -c -o $@ $< $(CFLAGS) -I$(LOCAL_INCLUDES)
+
+$(TARGET) : $(OBJ_FILES)
+	$(CC) -o $@ $^
 
 all : $(TARGET)
-	echo All done
+	@rm *.o
+
+.PHONY: clean
 
 clean :
-	rm -f $(TARGET) $(OBJS)
-	echo clean done
-
-$(TARGET) : $(OBJS)
-	gcc -o $@ $^
-
-%.o : %.c
-	gcc $(CFLAGS) -o $@ -c $<
+	@rm -f $(TARGET) $(OBJ_FILES) 2> /dev/null

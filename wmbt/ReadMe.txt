@@ -1,12 +1,12 @@
-WICED Manufacturing Bluetooth Test Tool
+AIROC(TM) Manufacturing Bluetooth(r) Test Tool
 
 Overview
 
-The WICED manufacturing Bluetooth test tool (WMBT) is used to test and verify the
-RF performance of Cypress SoC Bluetooth BR/EDR/LE devices.
+The AIROC(TM) manufacturing Bluetooth(r) test tool (WMBT) is used to test and verify the
+RF performance of Infineon SoC Bluetooth(r) BR/EDR/LE devices.
 
-Each test sends an HCI or WICED HCI command to the device and then waits for an
-HCI or WICED HCI Command Complete event from the device respectively.
+Each test sends an HCI or AIROC(TM) HCI command to the device and then waits for an
+Command Complete event from the device.
 
 The wmbt utility can be found in BTSDK installations in the workspace where shared
 dependencies are installed, and is referred to as <WMBT_PATH> below:
@@ -14,7 +14,7 @@ mtb_shared\wiced_btsdk\tools\btsdk-utils\wmbt\Release
 
 Device configuration:
 
-    The Cypress Bluetooth device to be tested must expose an HCI UART and that this
+    The Infineon Bluetooth(r) device to be tested must expose an HCI UART and that this
     UART can be connected to a COM port or to a Serial to USB device of a PC. The
     HCI UART supports HCI Commands and Events described in this document.
 
@@ -28,7 +28,7 @@ Device configuration:
 
 Environment Variables:
 
-    MBT_BAUD_RATE: Cypress SoC Bluetooth devices support adjustable baud rates up
+    MBT_BAUD_RATE: Infineon AIROC(TM) SoC Bluetooth(r) devices support adjustable baud rates up
     to 4 Mbps via the wiced_transport_init() API included with the SDK. If this API
     is not utilized in an application to re-configure the baud rate, the default
     rate of 115.2 Kbps will be used by the device. The MBT_BAUD_RATE environment
@@ -38,17 +38,17 @@ Environment Variables:
 
     mtb_shared\wiced_btsdk\tools\btsdk-utils\wmbt\Release>set MBT_BAUD_RATE=3000000
 
-    TRANSPORT_MODE: The Bluetooth Core Specification [1] defines the Host Controller
+    TRANSPORT_MODE: The Bluetooth(r) Core Specification [1] defines the Host Controller
     Interface (HCI) which provides a standardized communication protocol between the
-    BT host stack and BT controller. Cypress SoC Bluetooth devices provide a high
-    level of integration, e.g. BT Controller and embedded BT Host Stack in a single
-    chip, to simplify BT product development for customers by not requiring them to
+    Bluetooth(r) host stack and controller. AIROC(TM) SoC Bluetooth devices provide a high
+    level of integration, e.g. Bluetooth(r) Controller and embedded Host Stack in a single
+    chip, to simplify product development for customers by not requiring them to
     be familiar with all HCI commands/events. Typically, when the embedded stack is
-    utilized in the Cypress device and it interfaces to an onboard MCU, the MCU
-    software would likely need to send/receive commands/events to the Cypress device.
-    For such a solution, WICED HCI is defined and provided as an example, see WICED
-    HCI UART Control Protocol [3]. WMBT provides support for both HCI and WICED HCI
-    via the TRANSPORT_MODE environment variable. If WICED HCI is desired, your
+    utilized in the AIROC(TM) device and it interfaces to an onboard MCU, the MCU
+    software would likely need to send/receive commands/events to the AIROC(TM) device.
+    For such a solution, AIROC(TM) HCI is defined and provided as an example, see AIROC(TM)
+    HCI UART Control Protocol [3]. WMBT provides support for both HCI and AIROC(TM) HCI
+    via the TRANSPORT_MODE environment variable. If AIROC(TM) HCI is desired, your
     application must implement handlers for the
     HCI_CONTROL_TEST_COMMAND_ENCAPSULATED_HCI_COMMAND, see hci_control_test.c
     included with the watch sample application. HCI should be sufficient for most
@@ -68,7 +68,7 @@ the PC.
 Usage: wmbt reset_highspeed COMx
 
 The example below sends HCI_Reset command at the configured MBT_BAUD_RATE to the device
-and processes the HCI Command Complete event (BLUETOOTH SPECIFICATION Version 4.1
+and processes the HCI Command Complete event (Bluetooth(r) Core Specification Version 4.1
 [Vol 2], Section 7.3.2 for details).
 
 <WMBT_PATH> wmbt reset_highspeed COM23
@@ -91,9 +91,9 @@ interval. External test equipment should be used to generate the reference
 packets.
 
 The frequency on which the device listens for the packets is passed as a
-parameter. BLE devices use 40 channels, each of which is 2 MHz wide. Channel
-0 maps to 2402 MHz and Channel 39 maps to 2480 MHz (see BLUETOOTH
-SPECIFICATION Version 4.1 [Vol 2], Section 7.8.28 for details).
+parameter. LE devices use 40 channels, each of which is 2 MHz wide. Channel
+0 maps to 2402 MHz and Channel 39 maps to 2480 MHz (see Bluetooth(r) Core
+Specification Version 4.1 [Vol 2], Section 7.8.28 for details).
 
 Usage: wmbt le_receiver_test COMx <rx_frequency>
 where:
@@ -119,16 +119,16 @@ where 0 signifies success.
 
 *LE Transmitter Test
 
-The LE Transmitter Test configures the Cypress SoC BT device to send test
+The LE Transmitter Test configures the AIROC(TM) device to send test
 packets at a fixed interval. External test equipment may be used to receive
 and analyze the reference packets.
 
 The frequency on which the device transmits the packets  is passed as a
-parameter. BLE devices use 40 channels, each of which is 2 MHz wide. Channel 0
+parameter. LE devices use 40 channels, each of which is 2 MHz wide. Channel 0
 maps to 2402 MHz and Channel 39 maps to 2480 MHz.
 
 The other two parameters specify the length of the test data and the data
-pattern to be used (see BLUETOOTH SPECIFICATION Version 4.1 [Vol 2], Section
+pattern to be used (see Bluetooth(r) Specification Version 4.1 [Vol 2], Section
 7.8.29 for details).
 
 Usage: wmbt le_transmitter_test COMx <tx_frequency> <data_length> <data_pattern>
@@ -193,7 +193,7 @@ Close Serial Bus
 
 Note: Unlike the LE tests, this test uses 79 frequencies, each 1 MHz wide.
 
-This test configures the Cypress SoC BT device to turn the carrier ON or OFF.
+This test configures the AIROC(TM) device to turn the carrier ON or OFF.
 When the carrier is ON the device transmitsaccording to the specified transmit
 mode, modulation type, frequency, and power level.
 
@@ -223,13 +223,13 @@ where:
 The example below turns the carrier ON and instructs the device to transmit an
 unmodulated pattern on 2402 MHz at max tx power.
 
-<WMBT_PATH> wmbt tx_frequency_arm COM23 1 2402 1 2 0
+<WMBT_PATH> wmbt tx_frequency_arm COM23 1 2402 0 2 0
 MBT_BAUD_RATE:  3000000
 TRANSPORT_MODE: 0 (HCI)
 
 Opened COM23 at speed: 3000000
 Sending HCI Command:
-0000 < 01 14 FC 07 00 00 01 02 09 00 00 >
+0000 < 01 14 FC 07 00 02 00 02 09 00 00 >
 Received HCI Event:
 0000 < 04 0E 04 01 14 FC 00 >
 Success
@@ -253,9 +253,9 @@ Close Serial Bus
 
 *Radio Tx Test
 
-Note: Connectionless transmit test to send Bluetooth packets
+Note: Connectionless transmit test to send Bluetooth(r) packets
 
-The test configures the Cypress SoC BT device to transmit the selected data pattern
+The test configures the AIROC(TM) device to transmit the selected data pattern
 which is governed by a specified frequency and a specified logical channel at a
 specified power level.
 
@@ -266,7 +266,7 @@ Usage: wmbt radio_tx_test COMx <bdaddr> <frequency> <modulation_type> <logical_c
 where:
     bd_addr: BD_ADDR of Tx device (6 bytes)
     frequency: 0 or transmit frequency (2402 ÅE2480) in MHz
-        0: normal Bluetooth hopping sequence (79 channels)
+        0: normal Bluetooth(r) hopping sequence (79 channels)
         2402 - 2480: single frequency without hopping
     modulation_type:
         0: 0x00 8-bit Pattern
@@ -288,7 +288,7 @@ where:
     packet_length: 0 ÅE65535. Device will limit the length to the max for the baseband packet type.
         eg) if DM1 packets are sent, the maximum packet size is 17 bytes.
     tx_power = Power Table Index with [0] being max power. Number of
-               indexes will depend on the SoC BT device used.
+               indexes will depend on the AIROC(TM) device used.
 
 The example below instructs the device to transmit 0xAA 8-bit Pattern on the 2402 MHz and ACL Basic
 with DM1 packet (17 bytes) type at max tx power
@@ -313,10 +313,10 @@ The test continues to run until device is reset.
 
 *Radio Rx Test
 
-Note: Connectionless receive test for Bluetooth packets
+Note: Connectionless receive test for Bluetooth(r) packets
 
-This test issues a command to the Cypress SoC BT device to set the radio to camp on a specified
-frequency. While the test is running, the BT device periodically sends reports about received
+This test issues a command to the AIROC(TM) device to set the radio to camp on a specified
+frequency. While the test is running, the device periodically sends reports about received
 packets.
 
 Usage: wmbt radio_rx_test COMx <bd_addr> <frequency> <modulation_type> <logical_channel> <bb_packet_type> <packet_length>
@@ -343,7 +343,7 @@ where:
     packet_length: 0 ÅE65535.
         Device will compare length of the received packets with the specified packet_length.
 
-The Cypress SoC BT device will generate the statistics report of the Rx Test every second.
+The AIROC(TM) device will generate the statistics report of the Rx Test every second.
 
 The example below instructs the device to receive 0xAA 8-bit Pattern on the 2402 MHz and ACL Basic with DM1 packet type.
 
@@ -386,9 +386,9 @@ TELEC the Japanese government regulatory testing requires 20-ch reduced hopping 
 at each lower, middle, upper 20-channels. The DUT will transmit a specific packet at
 specific hopping channels. It works standalone, does not require peer device.
 
-Note: Connectionless transmit test to send Bluetooth packets
+Note: Connectionless transmit test to send Bluetooth(r) packets
 
-The test configures the Cypress SoC BT device to transmit the selected data pattern
+The test configures the AIROC(TM) device to transmit the selected data pattern
 which is governed by a specified hopping pattern and a specified logical channel at a
 specified power level.
 

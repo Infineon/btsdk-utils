@@ -387,6 +387,16 @@ BOOL32 ecdsa_verify(unsigned char* digest, unsigned char* signature, Point* key)
    Point p1, p2;
    UINT32 i;
 
+   unsigned char signature_test[KEY_LENGTH_BYTES * 2];
+
+   // Check if the signature is valid. All zero is invalid.
+   memset(signature_test, 0, KEY_LENGTH_BYTES * 2);
+   if (memcmp(signature_test, signature, KEY_LENGTH_BYTES * 2) == 0)
+   {
+       printf("Error, signature is zeros\n");
+       return FALSE;
+   }
+
    // swap input data endianess
    for(i = 0; i < KEY_LENGTH_DWORDS; i++)
    {

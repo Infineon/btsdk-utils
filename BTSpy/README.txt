@@ -3,10 +3,10 @@ BTSpy
 
 Overview
 ========
-BTSpy is a trace utility that can be used in the WICED BT platforms to
-view protocol and generic trace messages from the embedded device.
+BTSpy is a trace utility that can be used in the AIROC(TM) Bluetooth(r)
+platforms to view protocol and generic trace messages from the embedded device.
 
-This application can also generate Bluetooth Snoop logs by saving the
+This application can also generate Bluetooth(r) Snoop logs by saving the
 logs from menu Tools -> File Logging Options -> Generate snoop log file
 To view the snoop log, use a utility such as FrontLine Viewer.
 
@@ -16,7 +16,7 @@ from another application on the same or different system.
 
 To start BTSpy execute wiced_btsdk\tools\btsdk-utils\BTSpy\<OS>:
 - Windows: BTSpy.exe
-- macOS: bt_spy.dmg
+- macOS: bt_spy.app
 - Linux: RunBtSpy.sh
 
 Note that only a single instance of the application can be executed
@@ -24,7 +24,7 @@ on a machine.
 
 To read traces over the UART interface, the Client Control application
 (wiced_btsdk\tools\btsdk-host-apps-bt-ble\client_control) should open
-the serial port associated with the HCI UART port of the WICED BT device,
+the serial port associated with the HCI UART port of the device,
 which should be configured to use the same baud rate configured
 in the embedded application.
 
@@ -32,8 +32,8 @@ Send application traces to BTSpy
 ================================
 The WICED_BT_TRACE macro can be used by the embedded application to
 generate a trace.  The output can be routed to Peripheral UART (PUART)
-or to the WICED HCI UART.  To route traces to BTSpy, the application
-should use WICED UART.
+or to the HCI UART.  To route traces to BTSpy, the application
+should use "WICED UART".
 
 The application should configure the transport for the appropriate type,
 mode, and baud rate.
@@ -59,13 +59,13 @@ const wiced_transport_cfg_t transport_cfg =
 };
 
 The default UART speed is configured for 3mbps, which is typically
-available on all WICED boards and on all operating systems.
+available on all AIROC(TM) boards and on all operating systems.
 
 #define HCI_UART_DEFAULT_BAUD   3000000
 
 The application should initialize the transport during the application
 initialization. The application can then configure the system to
-route traces to WICED HCI.
+route traces to "WICED UART".
 
 APPLICATION_START( )
 {
@@ -94,8 +94,8 @@ APPLICATION_START()
 
 Send HCI traces to BTSpy
 ========================
-The firmware which is executed on a BT WICED device consists of the
-embedded BT stack (in ROM) and the BT controller. The embedded application
+The firmware which is executed on an AIROC(TM) Bluetooth(r) device consists of the
+embedded Bluetooth(r) stack (in ROM) and the Bluetooth(r) controller. The embedded application
 can register with the stack to receive copies of all
 commands, events, and data packets exchanged between the stack and
 the controller and route them to the BTSpy.

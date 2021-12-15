@@ -106,6 +106,7 @@ int main(int argc, char *argv[])
     FILE * pfKey = NULL;
     FILE * pfDfuBin = NULL;
     unsigned int cid = 0, pid = 0, vid = 0, major_version = 0, minor_version = 0;
+    unsigned char imagedata[16];
     unsigned char metadata[MAX_METADATA_LENGTH];
     unsigned int metadata_length = 0;
     size_t file_size;
@@ -136,7 +137,7 @@ int main(int argc, char *argv[])
         {
             if (sscanf(argv[i], "cid=0x%x", &cid) != 1)
             {
-                printf("Wrong CID\n");
+                printf("ERROR!!! Wrong CID\n");
                 return -1;
             }
         }
@@ -144,7 +145,7 @@ int main(int argc, char *argv[])
         {
             if (sscanf(argv[i], "pid=0x%x", &pid) != 1)
             {
-                printf("Wrong PID\n");
+                printf("ERROR!!! Wrong PID\n");
                 return -1;
             }
         }
@@ -152,7 +153,7 @@ int main(int argc, char *argv[])
         {
             if (sscanf(argv[i], "vid=0x%x", &vid) != 1)
             {
-                printf("Wrong VID\n");
+                printf("ERROR!!! Wrong VID\n");
                 return -1;
             }
         }
@@ -160,7 +161,7 @@ int main(int argc, char *argv[])
         {
             if (sscanf(argv[i], "version=%d.%d", &major_version, &minor_version) != 2)
             {
-                printf("Wrong version\n");
+                printf("ERROR!!! Wrong version\n");
                 return -1;
             }
         }
@@ -169,7 +170,7 @@ int main(int argc, char *argv[])
             pfKey = fopen(argv[++i], "rb");
             if (!pfKey)
             {
-                printf("Failed to open private key file: %s\n", argv[i]);
+                printf("ERROR!!! Failed to open private key file: %s\n", argv[i]);
                 return -1;
             }
         }
@@ -178,7 +179,7 @@ int main(int argc, char *argv[])
             pfInput = fopen(argv[++i], "rb");
             if (!pfInput)
             {
-                printf("Failed to open input file: %s\n", argv[i]);
+                printf("ERROR!!! Failed to open input file: %s\n", argv[i]);
                 return -1;
             }
             p_firmware_filename = argv[i];
@@ -188,7 +189,7 @@ int main(int argc, char *argv[])
             pfMetadata = fopen(argv[++i], "wb");
             if (!pfMetadata)
             {
-                printf("Failed to open metadata file for writing!\n");
+                printf("ERROR!!! Failed to open metadata file for writing\n");
                 return -1;
             }
             p_metadata_filename = argv[i];
@@ -198,41 +199,51 @@ int main(int argc, char *argv[])
             pfOutput = fopen(argv[++i], "w");
             if (!pfOutput)
             {
-                printf("Failed to open manifest file for writing!\n");
+                printf("ERROR!!! Failed to open manifest file for writing\n");
                 return -1;
             }
         }
         else
         {
-            printf("Unknown argument: %s\n", argv[i]);
+            printf("ERROR!!! Unknown argument: %s\n", argv[i]);
             return -1;
         }
     }
     if (cid == 0)
     {
-        printf("Invalid cid!\"\n");
+        printf("ERROR!!! Invalid cid\n");
         return -1;
     }
     if (pid == 0)
     {
-        printf("Invalid pid!\"\n");
+        printf("ERROR!!! Invalid pid\n");
         return -1;
     }
     if (vid == 0)
     {
-        printf("Invalid vid!\"\n");
+        printf("ERROR!!! Invalid vid\n");
         return -1;
     }
     if (major_version == 0)
     {
-        printf("Invalid version!\"\n");
+        printf("ERROR!!! Invalid version\n");
         return -1;
     }
     if ((p_firmware_filename == NULL) || (p_metadata_filename == NULL))
     {
-        printf("Invalid arguments\n");
+        printf("ERROR!!! Invalid arguments\n");
         return -1;
     }
+    fread(imagedata, 1, 16, pfInput);
+    if (memcmp(imagedata, "BRCM", 4) == 0)  // exclude 20706 firmware image
+    {
+        if (major_version != (unsigned int)imagedata[10] || minor_version != (unsigned int)imagedata[11])
+        {
+            printf("ERROR!!! Image version %d.%d does not match signing version %d.%d\n", imagedata[10], imagedata[11], major_version, minor_version);
+            return -1;
+        }
+    }
+    rewind(pfInput);
 
     // remove path
     if ((p = strrchr(p_firmware_filename, '\\')) != NULL)
@@ -247,7 +258,7 @@ int main(int argc, char *argv[])
     pfDfuBin = fopen(dfu_image_filename, "wb");
     if (!pfDfuBin)
     {
-        printf("Failed to open .dfu.bin file for writing!\n");
+        printf("ERROR!!! Failed to open .dfu.bin file for writing\n");
         return -1;
     }
 
@@ -279,13 +290,13 @@ int main(int argc, char *argv[])
     rewind(pfInput);
     if ((buf = (unsigned char *)malloc(file_size)) == NULL)
     {
-        printf("Out of memory\n");
+        printf("ERROR!!! Out of memory\n");
         return -1;
     }
     read_size = fread(buf, 1, file_size, pfInput);
     if (read_size != file_size)
     {
-        printf("File size: %d, read size: %d\n", (int)file_size, (int)read_size);
+        printf("ERROR!!! File size: %d, read size: %d\n", (int)file_size, (int)read_size);
         return -1;
     }
     sha2_update(&sha2_ctx, buf, file_size);
@@ -310,7 +321,7 @@ int main(int argc, char *argv[])
 
     if (read_size != KEY_LENGTH_BYTES)
     {
-        printf("Wrong private key size %d\n", (int)read_size);
+        printf("ERROR!!! Wrong private key size %d\n", (int)read_size);
         return -1;
     }
 
@@ -324,7 +335,7 @@ int main(int argc, char *argv[])
     // Sign
     if(!ecdsa_sign(digest, signature, private_key, random_key))
     {
-        printf("Failed to generate signature\n");
+        printf("ERROR!!! Failed to generate signature\n");
         return -1;
     }
 
