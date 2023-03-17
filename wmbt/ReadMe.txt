@@ -218,7 +218,7 @@ where:
                 2 = 8PSK
                 3 = LE
         tx_power = Power Table Index with [0] being max power. Number of
-                   indexes will depend on the SoC BT device used.
+                   indexes will depend on the SoC Bluetooth device used.
 
 The example below turns the carrier ON and instructs the device to transmit an
 unmodulated pattern on 2402 MHz at max tx power.

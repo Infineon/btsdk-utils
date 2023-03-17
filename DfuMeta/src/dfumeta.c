@@ -1,5 +1,5 @@
 /*
-* Copyright 2016-2022, Cypress Semiconductor Corporation (an Infineon company) or
+* Copyright 2016-2023, Cypress Semiconductor Corporation (an Infineon company) or
 * an affiliate of Cypress Semiconductor Corporation.  All rights reserved.
 *
 * This software, including source code, documentation and related
@@ -47,7 +47,7 @@
 *     "firmware": {
 *       "firmware_file": "BLE_Mesh_OnOffServer_CYBT-213043-MESH.ota.bin",
 *       "metadata_file": "metadata",
-*       "firmware_id": "3101163002000101"
+*       "firmware_id": "0131301600020101"
 *     }
 *   }
 * }
@@ -69,9 +69,11 @@
 
 #define JSON_FILE_HEADER   "{\n  \"manifest\": {\n    \"firmware\": {\n"
 #define JSON_FILE_FOOTER   "    }\n  }\n} "
+#define TIMESTAMP_TAG      "      \"timestamp\": "
 #define FIRMWARE_FILE_TAG  "      \"firmware_file\": "
 #define FIRMWARE_ID_TAG    "      \"firmware_id\": "
 #define METADATA_FILE_TAG  "      \"metadata_file\": "
+#define FACTORY_RESET_TAG  "      \"factory_reset\": "
 
 void write_hex_data_to_file(FILE *pf, unsigned char *data, int data_len)
 {
@@ -122,22 +124,19 @@ int main(int argc, char *argv[])
     char * p_firmware_filename = NULL;
     char dfu_image_filename[256];
     char * p;
+    int timestamp = 0;
+    int factory_reset = 0;
 
     /*
      * Read command line arguments
      */
-    if (argc != 13)
-    {
-        printf("Usage: %s cid=0x<company ID> pid=0x<product ID> vid=0x<hardware version> version=<n.n> -k <key file> -i <input file> -m <output metadata file> -o <output manifest file>\n", argv[0]);
-        return -1;
-    }
     for (i = 1; i < argc; i++)
     {
         if (strstr(argv[i], "cid=") == argv[i])
         {
             if (sscanf(argv[i], "cid=0x%x", &cid) != 1)
             {
-                printf("ERROR!!! Wrong CID\n");
+                printf("ERROR!!! Invalid CID\n");
                 return -1;
             }
         }
@@ -145,7 +144,7 @@ int main(int argc, char *argv[])
         {
             if (sscanf(argv[i], "pid=0x%x", &pid) != 1)
             {
-                printf("ERROR!!! Wrong PID\n");
+                printf("ERROR!!! Invalid PID\n");
                 return -1;
             }
         }
@@ -153,7 +152,7 @@ int main(int argc, char *argv[])
         {
             if (sscanf(argv[i], "vid=0x%x", &vid) != 1)
             {
-                printf("ERROR!!! Wrong VID\n");
+                printf("ERROR!!! Invalid VID\n");
                 return -1;
             }
         }
@@ -161,7 +160,7 @@ int main(int argc, char *argv[])
         {
             if (sscanf(argv[i], "version=%d.%d", &major_version, &minor_version) != 2)
             {
-                printf("ERROR!!! Wrong version\n");
+                printf("ERROR!!! Invalid version\n");
                 return -1;
             }
         }
@@ -203,35 +202,23 @@ int main(int argc, char *argv[])
                 return -1;
             }
         }
+        else if (strcmp(argv[i], "-t") == 0)
+        {
+            timestamp = 1;
+        }
+        else if (strcmp(argv[i], "-f") == 0)
+        {
+            factory_reset = 1;
+        }
         else
         {
             printf("ERROR!!! Unknown argument: %s\n", argv[i]);
             return -1;
         }
     }
-    if (cid == 0)
+    if (cid == 0 || pid == 0 || vid == 0 || (major_version + minor_version) == 0 || pfKey == NULL || pfInput == NULL || pfOutput == NULL)
     {
-        printf("ERROR!!! Invalid cid\n");
-        return -1;
-    }
-    if (pid == 0)
-    {
-        printf("ERROR!!! Invalid pid\n");
-        return -1;
-    }
-    if (vid == 0)
-    {
-        printf("ERROR!!! Invalid vid\n");
-        return -1;
-    }
-    if (major_version == 0)
-    {
-        printf("ERROR!!! Invalid version\n");
-        return -1;
-    }
-    if ((p_firmware_filename == NULL) || (p_metadata_filename == NULL))
-    {
-        printf("ERROR!!! Invalid arguments\n");
+        printf("Usage: %s cid=0x<company ID> pid=0x<product ID> vid=0x<hardware version> version=<n.n> -k <key file> -i <input file> -m <output metadata file> -o <output manifest file>\n", argv[0]);
         return -1;
     }
     fread(imagedata, 1, 16, pfInput);
@@ -266,12 +253,12 @@ int main(int argc, char *argv[])
      * Construct metadata
      */
     i = 0;
-    metadata[i++] = (unsigned char) cid;
     metadata[i++] = (unsigned char)(cid >> 8);
-    metadata[i++] = (unsigned char) pid;
+    metadata[i++] = (unsigned char) cid;
     metadata[i++] = (unsigned char)(pid >> 8);
-    metadata[i++] = (unsigned char) vid;
+    metadata[i++] = (unsigned char) pid;
     metadata[i++] = (unsigned char)(vid >> 8);
+    metadata[i++] = (unsigned char) vid;
     metadata[i++] = (unsigned char) major_version;
     metadata[i++] = (unsigned char) minor_version;
     metadata_length = i;
@@ -348,8 +335,11 @@ int main(int argc, char *argv[])
     /*
     * Save metadata to file
     */
-    fwrite(metadata, 1, metadata_length, pfMetadata);
-    fclose(pfMetadata);
+    if (pfMetadata)
+    {
+        fwrite(metadata, 1, metadata_length, pfMetadata);
+        fclose(pfMetadata);
+    }
 
     /*
      * Write output file
@@ -359,10 +349,32 @@ int main(int argc, char *argv[])
     fwrite("\"", 1, 1, pfOutput);
     fwrite(dfu_image_filename, 1, strlen(dfu_image_filename), pfOutput);
     fwrite("\",\n", 1, 3, pfOutput);
-    fwrite(METADATA_FILE_TAG, 1, strlen(METADATA_FILE_TAG), pfOutput);
-    fwrite("\"", 1, 1, pfOutput);
-    fwrite(p_metadata_filename, 1, strlen(p_metadata_filename), pfOutput);
-    fwrite("\",\n", 1, 3, pfOutput);
+    if (p_metadata_filename)
+    {
+        fwrite(METADATA_FILE_TAG, 1, strlen(METADATA_FILE_TAG), pfOutput);
+        fwrite("\"", 1, 1, pfOutput);
+        fwrite(p_metadata_filename, 1, strlen(p_metadata_filename), pfOutput);
+        fwrite("\",\n", 1, 3, pfOutput);
+    }
+    if (timestamp)
+    {
+        char str[32];
+        time_t t = time(NULL);
+        struct tm *utc = gmtime(&t);
+        size_t len = strftime(str, 32, "%Y-%m-%dT%H:%M:%SZ", utc);
+
+        fwrite(TIMESTAMP_TAG, 1, strlen(TIMESTAMP_TAG), pfOutput);
+        fwrite("\"", 1, 1, pfOutput);
+        fwrite(str, 1, len, pfOutput);
+        fwrite("\",\n", 1, 3, pfOutput);
+    }
+    if (factory_reset)
+    {
+        fwrite(FACTORY_RESET_TAG, 1, strlen(FACTORY_RESET_TAG), pfOutput);
+        fwrite("\"", 1, 1, pfOutput);
+        fwrite("1", 1, 1, pfOutput);
+        fwrite("\",\n", 1, 3, pfOutput);
+    }
     fwrite(FIRMWARE_ID_TAG, 1, strlen(FIRMWARE_ID_TAG), pfOutput);
     fwrite("\"", 1, 1, pfOutput);
     // Firmware ID can be two bytes company ID plus any vendor specific data. We use metadata here for demo only.

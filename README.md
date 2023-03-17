@@ -5,7 +5,7 @@
 This repo contains utilities used in BTSDK. Utilities included are:
 
 * BTSpy<br/>
-    * Tracing utility to collect HCI and application traces, and BT&#174; snoop logs.<br/>
+    * Tracing utility to collect HCI and application traces, and Bluetooth&#174; snoop logs.<br/>
 
 
 * wmbt<br/>
@@ -14,3 +14,6 @@ This repo contains utilities used in BTSDK. Utilities included are:
 
 * ecdsa256<br/>
     * Elliptic Curve Digital Signature Algorithm<br/>
+
+* DfuMeta<br/>
+    * Generate device firmware upgrade image package<br/>

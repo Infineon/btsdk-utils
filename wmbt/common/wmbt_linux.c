@@ -1,5 +1,5 @@
 /*
- * Copyright 2016-2022, Cypress Semiconductor Corporation (an Infineon company) or
+ * Copyright 2016-2023, Cypress Semiconductor Corporation (an Infineon company) or
  * an affiliate of Cypress Semiconductor Corporation.  All rights reserved.
  *
  * This software, including source code, documentation and related
@@ -35,7 +35,7 @@
  *  Name:          wmbt_linux.c
  *
  *  Description:   The WICED Manufacturing Bluetooth test tool (WMBT) is used to test and verify the RF
- *                 performance of the Cypress family of SoC Bluetooth BR/EDR/BLE standalone and
+ *                 performance of the Cypress family of SoC Bluetooth BR/EDR/LE standalone and
  *                 combo devices. Each test sends an WICED HCI command to the device and then waits
  *                 for an WICED HCI Command Complete event from the device.
  *
